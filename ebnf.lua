@@ -1,7 +1,4 @@
-local parser = require "parser"
-local Number, Name, String, lateinit, initialiseLateInitRepo, kws = Number, Name, String, lateinit, initialiseLateInitRepo, kws
-print(Number, Name, String, lateinit, initialiseLateInitRepo, kws)
-for k, v in pairs(kws) do _G[k] = v end -- import kws.*
+require "parser" ()
 
 unop =(kw_minus
      / kw_not
@@ -29,13 +26,30 @@ fieldsep =(kw_comma
          / kw_semicolon)
          * "fieldsep"
 
+block =(lateinit("chunk"))
+      * "block"
+
+namelist =(Name
+         / maybemany(kw_comma + Name))
+         * "namelist"
+
+parlist =((namelist + maybe(kw_comma + kw_ellipsis))
+        / kw_ellipsis)
+        * "parlist"
+
+funcbody =(kw_paren_open + maybe(parlist) + kw_paren_close + block + kw_end)
+         * "funcbody"
+
+function_ =(kw_function + funcbody)
+          * "function_"
+
 exp_terminator =(kw_nil
                / kw_false
                / kw_true
                / Number
                / String
                / kw_ellipsis
-               / lateinit("function_")
+               / function_
                / lateinit("prefixexp")
                / lateinit("tableconstructor")
                / (unop + lateinit("exp_")))
@@ -58,41 +72,27 @@ fieldlist =(field + maybemany(fieldsep + field) + maybe(fieldsep))
 tableconstructor =(kw_brace_open + maybe(fieldlist) + kw_brace_close)
                  * "tableconstructor"
 
-parlist =((lateinit("namelist") + maybe(kw_comma + kw_ellipsis))
-        / kw_ellipsis)
-        * "parlist"
-
-funcbody =(kw_paren_open + maybe(parlist) + kw_paren_close + lateinit("block") + kw_end)
-         * "funcbody"
-
-function_ =(kw_function + funcbody)
-          * "function_"
-
-args =((kw_paren_open + maybe(lateinit("explist")) + kw_paren_close)
-     / tableconstructor
-     / String)
-     * "args"
-
-prefixexp =(((lateinit("var"))
-            / (lateinit("functioncall"))
-            / ((kw_paren_open + exp_ + kw_paren_close)))
-          + maybe(prefixexp))
-          * "prefixexp"
-
-functioncall = (maybe(kw_colon + Name) + args) 
-             * "functioncall"
-
 explist =(maybemany(exp_ + kw_comma) + exp_)
         * "explist"
 
-namelist =(Name
-         / maybemany(kw_comma + Name))
-         * "namelist"
+args =((kw_paren_open + maybe(explist) + kw_paren_close)
+     / tableconstructor
+     / String)
+     * "args"
 
 var =((Name)
     / (kw_bracket_open + exp_ + kw_bracket_close) 
     / (kw_dot + Name))
     * "var"
+
+functioncall = (maybe(kw_colon + Name) + args) 
+             * "functioncall"
+     
+prefixexp =(((var)
+            / (functioncall)
+            / ((kw_paren_open + exp_ + kw_paren_close)))
+          + maybe(prefixexp))
+          * "prefixexp"
 
 varlist =(var + maybemany(kw_comma + var))
         * "varlist"
@@ -103,10 +103,7 @@ funcname =(Name + maybemany(kw_dot + Name) + maybe(kw_colon + Name))
 laststat =((kw_return + maybe(explist))
          / kw_break)
          * "laststat"
-         
-block =(lateinit("chunk"))
-      * "block"
-     
+
 stat =((varlist + kw_equals + explist)
      / functioncall
      / (kw_do + block + kw_end)
@@ -124,16 +121,21 @@ chunk =(maybemany(stat + maybe(kw_semicolon)) + maybe(laststat + maybe(kw_semico
 
 initialiseLateInitRepo(_G)
 
+-------------------
+
+local function parse(parser, str, startAt)
+  local finalIdx, parsedStrs = parser(startAt or 1, toChars(str))
+  return parsedStrs
+end
 
 
 if_statement = (kw_if + exp_ + kw_then + block --[[ + maybemany(kw_elseif + exp_ + kw_then + block) + maybe(kw_else + block) + kw_end]] )
              * "if_statement"
 
 
-local idx, tbl = if_statement(1)
-print("Index:", idx, "tbl:", view(tbl))
+local tbl = parse(if_statement, "if true then print('true!') else print 'false :(' end")
+print("Found:", view(tbl))
 
-
-local idx, tbl = Name(13)
+local tbl = parse(Name, "if true then print('true!')", 13)
 print("Attempting to pull var")
-print("Index:", idx, "tbl:", view(tbl))
+print("Found:", view(tbl))
