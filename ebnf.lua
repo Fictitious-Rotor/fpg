@@ -125,7 +125,7 @@ initialiseLateInitRepo(_G)
 -------------------
 
 local function parse(parser, str, startAt)
-  local finalStrIdx, parsedStrs = parser(StringIndexer.new(toChars(str), startAt or 1))
+  local finalStrIdx, parsedStrs = parser(StringIndexer.new(toChars(str), startAt or 1), null)
   return parsedStrs
 end
 
@@ -144,5 +144,5 @@ for _, test in ipairs(tests) do
   local toParse = test[2]
   local startAt = test[3] or 1
   
-  print("|==========|", "Running:", parser, "on:", toParse, "startingAt:", startAt, "it returns:", view(parse(parser, toParse, startAt)))
+  print("|==========|", "Running:", parser, "on:", toParse, "startingAt:", startAt, "it returns:", parse(parser, toParse, startAt))
 end

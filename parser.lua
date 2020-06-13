@@ -1,4 +1,7 @@
 view = require "debugview"
+local list = require "SinglyLinkedList"
+null = list.null
+local cons = list.cons
 
 local patternIntersection, patternUnion
 local kwCompare
@@ -56,7 +59,7 @@ end
 --[=====================]--
 
 -- Advance pointer if contents of table matches eluChars at idx
-kwCompare = function(keyword, strIdx)
+kwCompare = function(keyword, strIdx, parsed)
   local pos = skipSpaces(strIdx)
 
   for _, c in ipairs(keyword) do
@@ -66,24 +69,21 @@ kwCompare = function(keyword, strIdx)
     pos = pos + 1
   end
   
-  return strIdx:withIndex(pos), tostring(keyword)
+  return strIdx:withIndex(pos), cons(tostring(keyword), parsed)
 end
 
 -- Intersection of two checks, returns either the index after both patterns, followed by a table of both patterns represented as strings or false
 patternIntersection = function(left, right)
-  return pattern(function(_, strIdx)
-    local strIdxAfterLeft, leftOutput = left(strIdx)
-    print("Intersection left pattern", left, "strIdxAfterLeft", strIdxAfterLeft, "produced", view(leftOutput))
+  return pattern(function(_, strIdx, parsed)
+    local strIdxAfterLeft, leftParsed = left(strIdx, parsed)
+    print("Intersection left pattern", left, "strIdxAfterLeft", strIdxAfterLeft, "produced", leftParsed)
     
     if strIdxAfterLeft then
-      local outTable = type(leftOutput) == "table" and leftOutput or { leftOutput }
-      local strIdxAfterRight, rightOutput = right(strIdxAfterLeft)
-      print("Intersection right pattern", right, "strIdxAfterRight", strIdxAfterRight, "produced", view(rightOutput))
+      local strIdxAfterRight, rightParsed = right(strIdxAfterLeft, leftParsed)
+      print("Intersection right pattern", right, "strIdxAfterRight", strIdxAfterRight, "produced", rightParsed)
       
-      if strIdxAfterRight then
-        outTable[#outTable + 1] = rightOutput
-        
-        return strIdxAfterRight, outTable
+      if strIdxAfterRight then        
+        return strIdxAfterRight, rightParsed
       end
     end
     
@@ -93,53 +93,54 @@ end
 
 -- Union of two checks, returns either left or right
 patternUnion = function(left, right)
-  return pattern(function(_, strIdx)
-    local strIdxAfterLeft, leftOutput = left(strIdx)
-    print("Union left pattern", left, "strIdxAfterLeft", strIdxAfterLeft, "produced", view(leftOutput))
+  return pattern(function(_, strIdx, parsed)
+    local strIdxAfterLeft, leftParsed = left(strIdx, parsed)
+    print("Union left pattern", left, "strIdxAfterLeft", strIdxAfterLeft, "produced", leftParsed)
     
     if strIdxAfterLeft then
-      return strIdxAfterLeft, leftOutput 
+      return strIdxAfterLeft, leftParsed 
     end
     
-    local strIdxAfterRight, rightOutput = right(strIdx)
-    print("Union right pattern", right, "strIdxAfterRight", strIdxAfterRight, "produced", view(rightOutput))
+    local strIdxAfterRight, rightParsed = right(strIdx, parsed)
+    print("Union right pattern", right, "strIdxAfterRight", strIdxAfterRight, "produced", rightParsed)
     
-    return strIdxAfterRight, rightOutput
+    return strIdxAfterRight, rightParsed
   end) * ("(" .. tostring(left) .. " / " .. tostring(right) .. ")")
 end
 
 local function maybe(childPattern)
-  return pattern(function(_, strIdx)
-    local strIdxAfterChildPattern, childPatternOutput = childPattern(strIdx)
+  return pattern(function(_, strIdx, parsed)
+    local strIdxAfterChildPattern, childPatternParsed = childPattern(strIdx, parsed)
     
     if strIdxAfterChildPattern then
-      return strIdxAfterChildPattern, childPatternOutput
+      return strIdxAfterChildPattern, childPatternParsed
     else
-      return strIdx, ""
+      return strIdx, parsed
     end
   end) * ("maybe (" .. tostring(childPattern) .. ")")
 end 
 
+
+-- Vulnerable to stack overflow. Might need to convert to for loop.
 local function many(childPattern)
-  return pattern(function(_, strIdx)
-    local function matchChildPattern(strIdx, nesting)
-      local strIdxAfterChildPattern, childPatternOutput = childPattern(strIdx)
+  return pattern(function(_, strIdx, parsed)
+    local function matchChildPattern(strIdx, parsed, nesting)
+      local strIdxAfterChildPattern, childPatternParsed = childPattern(strIdx, parsed)
       
       if strIdxAfterChildPattern then
-        local strIdxAfterRecursion, recursionOutput = matchChildPattern(strIdxAfterChildPattern, nesting + 1)
+        local strIdxAfterRecursion, recursionParsed = matchChildPattern(strIdxAfterChildPattern, childPatternParsed, nesting + 1)
         
         if strIdxAfterRecursion then
-          recursionOutput[nesting] = childPatternOutput
-          return strIdxAfterRecursion, recursionOutput
+          return strIdxAfterRecursion, recursionParsed
         else
-          return strIdxAfterChildPattern, { [nesting] = childPatternOutput }
+          return strIdxAfterChildPattern, childPatternParsed
         end
       end
       
       return false
     end
     
-    return matchChildPattern(strIdx, 1)
+    return matchChildPattern(strIdx, parsed, 1)
   end) * ("many (" .. tostring(childPattern) .. ")")
 end
 
@@ -181,7 +182,7 @@ end
 --|Terminator Patterns|---------------------------------------------------------------------------------------
 --[===================]--
 
-local Number = pattern(function(_, strIdx)
+local Number = pattern(function(_, strIdx, parsed)
   local idx = skipSpaces(strIdx)
   
   local function consumeChar(idx, nesting)
@@ -204,7 +205,7 @@ local Number = pattern(function(_, strIdx)
   local outIdx, result = consumeChar(idx, 1)
   
   if outIdx then
-    return strIdx:withIndex(outIdx), table.concat(result)
+    return strIdx:withIndex(outIdx), cons(table.concat(result), parsed)
   else
     return false
   end
@@ -212,7 +213,7 @@ end) * "Number"
 
 
 
-local Name = pattern(function(_, strIdx)
+local Name = pattern(function(_, strIdx, parsed)
   local idx = skipSpaces(strIdx)
 
   local function consumeChar(idx, nesting)
@@ -241,16 +242,16 @@ local Name = pattern(function(_, strIdx)
         
     if outIdx then 
       followingChars[1] = leadingChar
-      return strIdx:withIndex(outIdx), table.concat(followingChars)
+      return strIdx:withIndex(outIdx), cons(table.concat(followingChars), parsed)
     else
-      return strIdx:withIndex(idx + 1), leadingChar
+      return strIdx:withIndex(idx + 1), cons(leadingChar, parsed)
     end
   end
 end) * "Name"
 
 
 
-local String = pattern(function(_, strIdx)
+local String = pattern(function(_, strIdx, parsed)
   local idx = skipSpaces(strIdx)
   local boundaryMarker = strIdx:getValue(idx)
   
@@ -285,7 +286,7 @@ local String = pattern(function(_, strIdx)
   local outIdx, followingChars = consumeChar(idx + 1, 2, false)
   
   followingChars[1] = boundaryMarker
-  return strIdx:withIndex(outIdx), table.concat(followingChars)
+  return strIdx:withIndex(outIdx), cons(table.concat(followingChars), parsed)
 end) * "String"
 
 
@@ -298,12 +299,12 @@ local function lateinit(childPatternName)
   lateinitNames[childPatternName] = true
   local childPattern
   
-  return pattern(function(_, strIdx)
+  return pattern(function(_, strIdx, parsed)
     if not childPattern then
       childPattern = lateinitRepo[childPatternName]
     end
     
-    return childPattern(strIdx)
+    return childPattern(strIdx, parsed)
   end) * childPatternName
 end
 
