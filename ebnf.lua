@@ -1,4 +1,5 @@
 require "parser" ()
+local StringIndexer = require "StringIndexer"
 
 unop =(kw_minus
      / kw_not
@@ -124,7 +125,7 @@ initialiseLateInitRepo(_G)
 -------------------
 
 local function parse(parser, str, startAt)
-  local finalIdx, parsedStrs = parser(startAt or 1, toChars(str))
+  local finalStrIdx, parsedStrs = parser(StringIndexer.new(toChars(str), startAt or 1))
   return parsedStrs
 end
 
@@ -132,10 +133,16 @@ end
 if_statement = (kw_if + exp_ + kw_then + block --[[ + maybemany(kw_elseif + exp_ + kw_then + block) + maybe(kw_else + block) + kw_end]] )
              * "if_statement"
 
+local tests = { 
+  { if_statement, "if true then print('true!') else print 'false :(' end" },
+  --{ exp_, "true" },
+  --{ Name, "if true then print('true!')", 13 }
+}
 
-local tbl = parse(if_statement, "if true then print('true!') else print 'false :(' end")
-print("Found:", view(tbl))
-
-local tbl = parse(Name, "if true then print('true!')", 13)
-print("Attempting to pull var")
-print("Found:", view(tbl))
+for _, test in ipairs(tests) do
+  local parser = test[1]
+  local toParse = test[2]
+  local startAt = test[3] or 1
+  
+  print("|==========|", "Running:", parser, "on:", toParse, "startingAt:", startAt, "it returns:", view(parse(parser, toParse, startAt)))
+end
