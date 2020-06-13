@@ -75,6 +75,7 @@ end
 -- Intersection of two checks, returns either the index after both patterns, followed by a table of both patterns represented as strings or false
 patternIntersection = function(left, right)
   return pattern(function(_, strIdx, parsed)
+    print("About to run left fn:", left)
     local strIdxAfterLeft, leftParsed = left(strIdx, parsed)
     print("Intersection left pattern", left, "strIdxAfterLeft", strIdxAfterLeft, "produced", leftParsed)
     
@@ -182,113 +183,57 @@ end
 --|Terminator Patterns|---------------------------------------------------------------------------------------
 --[===================]--
 
-local Number = pattern(function(_, strIdx, parsed)
-  local idx = skipSpaces(strIdx)
+local Whitespace = pattern(function(_, strIdx, parsed)
+  local idx = strIdx:getIndex()
   
-  local function consumeChar(idx, nesting)
-    local number = (strIdx:getValue(idx) or ""):match("%d")
-    
-    if number then
-      local outIdx, followingNumbers = consumeChar(idx + 1, nesting + 1)
-      
-      if outIdx then
-        followingNumbers[nesting] = number
-        return outIdx, followingNumbers
-      else
-        return idx, { [nesting] = number }
-      end
-    end
-    
-    return false
+  while strIdx:getValue(idx) == ' ' do
+    idx = idx + 1
   end
   
-  local outIdx, result = consumeChar(idx, 1)
+  return strIdx:withIndex(idx), parsed
+end)
+
+local function makeRxMatcher(regexPattern)
+  return pattern(function(_, strIdx, parsed)
+    local value = strIdx:getValue():match(regexPattern)
+    
+    if value then
+      return strIdx:withFollowingIndex(), cons(value, parsed)
+    else
+      return false
+    end
+  end)
+end
+
+local Alphabetic = makeRxMatcher("%a") 
+                 * "Alphabetic"
+
+local Digit = makeRxMatcher("%d")
+            * "Digit"
+
+local EscapableChar = pattern(function(_, strIdx, parsed)
+  local value = strIdx:getValue()
+  local escaped = value == '\\'
   
-  if outIdx then
-    return strIdx:withIndex(outIdx), cons(table.concat(result), parsed)
+  if escaped then
+    local idx = strIdx:getIndex()
+    local value = strIdx:getValue(idx + 1)
+    
+    if not value then
+      error("Unterminated string at position:", idx)
+    end
+    
+    return strIdx:withIndex(idx + 2), cons(value, cons('\\', parsed))
+  end
+  
+  local isStringBoundary = value == '"' or value == "'"
+  
+  if not isStringBoundary then
+    return strIdx:withFollowingIndex(), cons(value, parsed)
   else
     return false
   end
-end) * "Number"
-
-
-
-local Name = pattern(function(_, strIdx, parsed)
-  local idx = skipSpaces(strIdx)
-
-  local function consumeChar(idx, nesting)
-    local matchedChar = (strIdx:getValue(idx) or ""):match("[%w_]")
-    
-    if matchedChar then
-      local outIdx, followingChars = consumeChar(idx + 1, nesting + 1)
-      
-      if outIdx then
-        followingChars[nesting] = matchedChar
-        return outIdx, followingChars
-      else
-        return idx, { [nesting] = matchedChar }
-      end
-    end
-    
-    return false
-  end
-  
-  local leadingChar = (strIdx:getValue(idx) or ""):match("%a")
-  
-  if not leadingChar then 
-    return false
-  else
-    local outIdx, followingChars = consumeChar(idx + 1, 2)
-        
-    if outIdx then 
-      followingChars[1] = leadingChar
-      return strIdx:withIndex(outIdx), cons(table.concat(followingChars), parsed)
-    else
-      return strIdx:withIndex(idx + 1), cons(leadingChar, parsed)
-    end
-  end
-end) * "Name"
-
-
-
-local String = pattern(function(_, strIdx, parsed)
-  local idx = skipSpaces(strIdx)
-  local boundaryMarker = strIdx:getValue(idx)
-  
-  if not (boundaryMarker == '"' or boundaryMarker == "'") then
-    return false
-  end
-
-  function consumeChar(idx, nesting, escaped)
-    if not escaped then
-      local curChar = strIdx:getValue(idx)
-      
-      if not curChar then
-        error("Unterminated string at position:", idx)
-      elseif curChar == boundaryMarker then
-        return idx + 1, { [nesting] = curChar }
-      else
-        local escapeNext = curChar == "\\"
-        local outIdx, followingChars = consumeChar(idx + 1, nesting + 1, escapeNext)
-        
-        followingChars[nesting] = curChar
-        
-        return outIdx, followingChars
-      end
-    else
-      local outIdx, followingChars = consumeChar(idx + 1, nesting + 1, false)
-      
-      followingChars[nesting] = strIdx:getValue(idx)
-      return outIdx, followingChars
-    end
-  end 
-  
-  local outIdx, followingChars = consumeChar(idx + 1, 2, false)
-  
-  followingChars[1] = boundaryMarker
-  return strIdx:withIndex(outIdx), cons(table.concat(followingChars), parsed)
-end) * "String"
-
+end) * "EscapableChar"
 
 
 local lateinitRepo = {}
@@ -326,12 +271,14 @@ local exports = {
 
   -- Functions
   maybe = maybe,
+  many = many,
   maybemany = maybemany,
   
   -- Terminators
-  Number = Number,
-  Name = Name,
-  String = String,
+  Whitespace = Whitespace,
+  Alphabetic = Alphabetic,
+  EscapableChar = EscapableChar,
+  Digit = Digit,
   
   -- Workarounds
   lateinit = lateinit,
@@ -362,8 +309,9 @@ local exports = {
 
 	kw_bracket_close = kw "]",
 	kw_bracket_open = kw "[",
-	kw_paren_close = kw ")",
 	kw_brace_close = kw "}",
+	kw_paren_close = kw ")",
+  kw_speech_mark = kw '"',
 	kw_ellipsis = kw "...",
 	kw_paren_open = kw "(",
 	kw_brace_open = kw "{",
@@ -375,11 +323,12 @@ local exports = {
 	kw_divide = kw "/",
 	kw_modulo = kw "%",
 	kw_length = kw "#",
+	kw_caret = kw "^",
 	kw_comma = kw ",",
 	kw_colon = kw ":",
 	kw_minus = kw "-",
+  kw_quote = kw "'",
 	kw_times = kw "*",
-	kw_caret = kw "^",
 	kw_plus = kw "+",
 	kw_lte = kw "<=",
 	kw_gte = kw ">=",

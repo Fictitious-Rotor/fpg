@@ -10,6 +10,10 @@ function StringIndex:withIndex(newIdx)
   return StringIndex.new(self.tbl, newIdx)
 end
 
+function StringIndex:withFollowingIndex()
+  return StringIndex.new(self.tbl, self.idx + 1)
+end
+
 function StringIndex:getTable()
   return self.tbl
 end

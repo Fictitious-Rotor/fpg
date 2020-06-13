@@ -30,6 +30,21 @@ fieldsep =(kw_comma
 block =(lateinit("chunk"))
       * "block"
 
+Alphanumeric =(Digit 
+             / Alphabetic)
+             * "Alphanumeric"
+
+Name =(Whitespace + Alphabetic + maybemany(Alphanumeric))
+     * "Name"
+
+String =((Whitespace + 
+          ((kw_speech_mark + maybemany(EscapableChar) + kw_speech_mark)
+         / (kw_quote + maybemany(EscapableChar) + kw_quote))))
+       * "String"
+
+Number =(Whitespace + many(Digit) + maybe(kw_dot + many(Digit)))
+       * "Number"
+      
 namelist =(Name
          / maybemany(kw_comma + Name))
          * "namelist"
