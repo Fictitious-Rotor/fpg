@@ -22,20 +22,37 @@ local function setValue(val, tbl, idx)
 end
 
 -- Deepest value first, top value last.
-function List.__tostring(instance)
+function List.take(instance, count)
+  function loop(tbl, count)
+    local head = tbl:getHead()
+  
+    if not head or count == 0 then
+       return {}, 1
+    else
+      return setValue(head, loop(tbl:getTail(), count - 1))
+    end
+  end
+  
+  return loop(instance, count or math.huge), nil -- suppressing second argument
+end
+
+function List.takeWhile(instance, predicate)
   function loop(tbl)
     local head = tbl:getHead()
   
-    if not head then
+    if not head or not predicate(head) then
        return {}, 1
     else
       return setValue(head, loop(tbl:getTail()))
     end
   end
   
-  local tbl, _ = loop(instance)
-  
-  return table.concat(tbl, " ")
+  return loop(instance), nil -- suppressing second argument
+end
+
+
+function List.__tostring(instance)
+  return table.concat(instance:take(), " ")
 end
 
 return List

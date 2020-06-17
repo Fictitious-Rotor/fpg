@@ -1,12 +1,10 @@
 view = require "debugview"
+StringIndexer = require "StringIndexer"
 local list = require "SinglyLinkedList"
 null = list.null
 local cons = list.cons
 
-local patternIntersection, patternUnion
-local kwCompare
-
-local pattern, kw -- Declared here as they are referenced in the higher order patterns
+local pattern, kw, keywordExports -- Declared here as they are referenced in the higher order patterns
 
 local function toChars(str)
   local out = {}
@@ -18,11 +16,15 @@ local function toChars(str)
   return out
 end
 
-local function skipSpaces(strIdx)
-  local idx = strIdx:getIndex()
-  while strIdx:getValue(idx) == ' ' do
+local function skipWhitespace(strIdx)
+  local idx = strIdx:getIndex() - 1
+  local value
+  
+  repeat
     idx = idx + 1
-  end
+    value = strIdx:getValue(idx)
+  until not (value == ' ' or value == '\n')
+  
   return idx
 end
 
@@ -59,8 +61,8 @@ end
 --[=====================]--
 
 -- Advance pointer if contents of table matches eluChars at idx
-kwCompare = function(keyword, strIdx, parsed)
-  local pos = skipSpaces(strIdx)
+local kwCompare = function(keyword, strIdx, parsed)
+  local pos = skipWhitespace(strIdx)
 
   for _, c in ipairs(keyword) do
     if c ~= strIdx:getValue(pos) then
@@ -73,13 +75,14 @@ kwCompare = function(keyword, strIdx, parsed)
 end
 
 -- Intersection of two checks, returns either the index after both patterns, followed by a table of both patterns represented as strings or false
-patternIntersection = function(left, right)
+local patternIntersection = function(left, right)
   return pattern(function(_, strIdx, parsed)
     print("About to run left fn:", left)
     local strIdxAfterLeft, leftParsed = left(strIdx, parsed)
     print("Intersection left pattern", left, "strIdxAfterLeft", strIdxAfterLeft, "produced", leftParsed)
     
     if strIdxAfterLeft then
+      print("About to run right fn:", right)
       local strIdxAfterRight, rightParsed = right(strIdxAfterLeft, leftParsed)
       print("Intersection right pattern", right, "strIdxAfterRight", strIdxAfterRight, "produced", rightParsed)
       
@@ -93,7 +96,7 @@ patternIntersection = function(left, right)
 end
 
 -- Union of two checks, returns either left or right
-patternUnion = function(left, right)
+local patternUnion = function(left, right)
   return pattern(function(_, strIdx, parsed)
     local strIdxAfterLeft, leftParsed = left(strIdx, parsed)
     print("Union left pattern", left, "strIdxAfterLeft", strIdxAfterLeft, "produced", leftParsed)
@@ -118,7 +121,7 @@ local function maybe(childPattern)
     else
       return strIdx, parsed
     end
-  end) * ("maybe (" .. tostring(childPattern) .. ")")
+  end) * ("maybe(" .. tostring(childPattern) .. ")")
 end 
 
 
@@ -142,11 +145,64 @@ local function many(childPattern)
     end
     
     return matchChildPattern(strIdx, parsed, 1)
-  end) * ("many (" .. tostring(childPattern) .. ")")
+  end) * ("many(" .. tostring(childPattern) .. ")")
 end
 
 local function maybemany(childPattern)
   return maybe(many(childPattern))
+end
+
+local function checkNotKeywordThenPack(childPattern)
+  return pattern(function(_, strIdx, parsed)
+    local returnedStrIdx, returnedParsed = childPattern(strIdx, null)
+    
+    if not returnedStrIdx then return false end
+    
+    local whatChildParsed = returnedParsed:take()
+    local parsedIndexer = StringIndexer.new(whatChildParsed, 1)
+    
+    local function loop(gen, tbl, state)
+      local kwName, kwParser = gen(tbl, state)
+      print("Checking against parser:", kwParser, "with name of:", kwName)
+    
+      return kwParser
+         and ((#kwParser == #whatChildParsed and kwParser(parsedIndexer, null))
+              or loop(gen, tbl, kwName))
+    end
+    
+    local matchesAnyKeyword = loop(pairs(keywordExports))
+    print("Checking keywords...", "matchesAnyKeyword", table.concat(whatChildParsed), "matchesAnyKeyword", matchesAnyKeyword)
+    
+    if matchesAnyKeyword then
+      return false
+    else
+      local packed = table.concat(whatChildParsed)
+      print("checkNotKeywordThenPack: packing value to be:", packed)
+      return returnedStrIdx, cons(packed, parsed)
+    end
+  end) * ("checkNotKeywordThenPack(" .. tostring(childPattern) .. ")")
+end
+
+local function packString(childPattern)
+  return pattern(function(_, strIdx, parsed)
+    local returnedStrIdx, returnedParsed = childPattern(strIdx, null)
+    
+    if not returnedStrIdx then return false end
+    
+    local packed = tostring(returnedParsed)
+    print("packString: packing value to be:", packed)
+    return returnedStrIdx, cons(packed, parsed)
+  end) * ("packString(" .. tostring(childPattern) .. ")")
+end
+
+local function notPattern(childPattern)
+  return pattern(function(_, strIdx, parsed)
+    local value = strIdx:getValue()
+  
+    return value
+       and not childPattern(strIdx, parsed)
+       and strIdx:withFollowingIndex(), cons(value, parsed)
+  end) * ("notPattern(" .. tostring(childPattern) .. ")")
 end
 
 
@@ -173,8 +229,9 @@ kw = function(str)
   return setmetatable(toChars(str), { 
     __call = kwCompare, 
     __add = patternIntersection, 
-    __div = patternUnion, 
-    __tostring = function() return "'" .. str .. "'" end 
+    __div = patternUnion,
+    __len = function() return #str end,
+    __tostring = function() return str end
   })
 end
 
@@ -184,18 +241,12 @@ end
 --[===================]--
 
 local Whitespace = pattern(function(_, strIdx, parsed)
-  local idx = strIdx:getIndex()
-  
-  while strIdx:getValue(idx) == ' ' do
-    idx = idx + 1
-  end
-  
-  return strIdx:withIndex(idx), parsed
-end)
+  return strIdx:withIndex(skipWhitespace(strIdx)), parsed
+end) * "Whitespace"
 
 local function makeRxMatcher(regexPattern)
   return pattern(function(_, strIdx, parsed)
-    local value = strIdx:getValue():match(regexPattern)
+    local value = (strIdx:getValue() or ""):match(regexPattern)
     
     if value then
       return strIdx:withFollowingIndex(), cons(value, parsed)
@@ -205,36 +256,14 @@ local function makeRxMatcher(regexPattern)
   end)
 end
 
-local Alphabetic = makeRxMatcher("%a") 
+local Alphabetic = makeRxMatcher("[%a_]")
                  * "Alphabetic"
 
 local Digit = makeRxMatcher("%d")
             * "Digit"
-
-local EscapableChar = pattern(function(_, strIdx, parsed)
-  local value = strIdx:getValue()
-  local escaped = value == '\\'
-  
-  if escaped then
-    local idx = strIdx:getIndex()
-    local value = strIdx:getValue(idx + 1)
-    
-    if not value then
-      error("Unterminated string at position:", idx)
-    end
-    
-    return strIdx:withIndex(idx + 2), cons(value, cons('\\', parsed))
-  end
-  
-  local isStringBoundary = value == '"' or value == "'"
-  
-  if not isStringBoundary then
-    return strIdx:withFollowingIndex(), cons(value, parsed)
-  else
-    return false
-  end
-end) * "EscapableChar"
-
+            
+local Alphanumeric = makeRxMatcher("[%w_]")
+                   * "Alphanumeric"
 
 local lateinitRepo = {}
 local lateinitNames = {}
@@ -265,7 +294,7 @@ end
 --|Exports|---------------------------------------------------------------------------------------------------
 --[=======]--
 
-local exports = {
+local functionExports = {
   -- Utilities
   toChars = toChars,
 
@@ -273,19 +302,24 @@ local exports = {
   maybe = maybe,
   many = many,
   maybemany = maybemany,
+  checkNotKeywordThenPack = checkNotKeywordThenPack,
+  packString = packString,
+  notPattern = notPattern,
   
   -- Terminators
   Whitespace = Whitespace,
   Alphabetic = Alphabetic,
-  EscapableChar = EscapableChar,
+  Alphanumeric = Alphanumeric,
   Digit = Digit,
+  EscapableChar = EscapableChar,
   
   -- Workarounds
   lateinit = lateinit,
-  initialiseLateInitRepo = initialiseLateInitRepo,
+  initialiseLateInitRepo = initialiseLateInitRepo
+}
 
-  -- Keywords
-	kw_do = kw "do",
+keywordExports = {
+  kw_do = kw "do",
 	kw_if = kw "if",
 	kw_in = kw "in",
 	kw_or = kw "or",
@@ -305,15 +339,20 @@ local exports = {
 	kw_repeat = kw "repeat",
 	kw_elseif = kw "elseif",
 	kw_return = kw "return",
-	kw_function = kw "function",
+	kw_function = kw "function"
+}
 
-	kw_bracket_close = kw "]",
+local symbolExports = {
+  kw_multiline_close = kw "]]",
+  kw_multiline_open = kw "[[",
+  kw_bracket_close = kw "]",
 	kw_bracket_open = kw "[",
 	kw_brace_close = kw "}",
 	kw_paren_close = kw ")",
   kw_speech_mark = kw '"',
 	kw_ellipsis = kw "...",
 	kw_paren_open = kw "(",
+  kw_backslash = kw "\\",
 	kw_brace_open = kw "{",
 	kw_are_equal = kw "==",
 	kw_not_equal = kw "~=",
@@ -337,10 +376,18 @@ local exports = {
 	kw_gt = kw ">"
 }
 
+local exports = {
+  functionExports,
+  keywordExports,
+  symbolExports
+}
+
 setmetatable(exports, {
-  __call = function(t)
-    for k, v in pairs(t) do
-      rawset(_G, k, v)
+  __call = function(exportTable) -- I've hard coded usage of two layers as patterns & keywords cannot be cleanly differentiated from export tables
+    for idx, subTable in pairs(exportTable) do
+      for k, v in pairs(subTable) do
+        rawset(_G, k, v)
+      end
     end
   end,
 })

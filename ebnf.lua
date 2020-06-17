@@ -1,5 +1,4 @@
 require "parser" ()
-local StringIndexer = require "StringIndexer"
 
 unop =(kw_minus
      / kw_not
@@ -29,18 +28,23 @@ fieldsep =(kw_comma
 
 block =(lateinit("chunk"))
       * "block"
-
-Alphanumeric =(Digit 
-             / Alphabetic)
-             * "Alphanumeric"
-
-Name =(Whitespace + Alphabetic + maybemany(Alphanumeric))
+      
+Name =(checkNotKeywordThenPack(Whitespace + Alphabetic + maybemany(Alphanumeric)))
      * "Name"
 
+
+String = packString(Whitespace + 
+                    ((kw_speech_mark + maybemany((kw_backslash + kw_speech_mark) / notPattern(kw_speech_mark)) + kw_speech_mark)
+                     / (kw_quote + maybemany((kw_backslash + kw_quote) / notPattern(kw_quote)) + kw_quote)
+                     / (kw_multiline_open + maybemany(notPattern(kw_multiline_close)) + kw_multiline_close)))
+       * "String"
+       
+--[[
 String =((Whitespace + 
           ((kw_speech_mark + maybemany(EscapableChar) + kw_speech_mark)
          / (kw_quote + maybemany(EscapableChar) + kw_quote))))
        * "String"
+]]
 
 Number =(Whitespace + many(Digit) + maybe(kw_dot + many(Digit)))
        * "Number"
@@ -59,27 +63,27 @@ funcbody =(kw_paren_open + maybe(parlist) + kw_paren_close + block + kw_end)
 function_ =(kw_function + funcbody)
           * "function_"
 
-exp_terminator =(kw_nil
+expr_terminator =(kw_nil
                / kw_false
                / kw_true
-               / Number
-               / String
                / kw_ellipsis
-               / function_
-               / lateinit("prefixexp")
                / lateinit("tableconstructor")
-               / (unop + lateinit("exp_")))
-               * "exp_terminator"
+               / function_
+               / (unop + lateinit("expr")))
+               / String
+               / Number
+               / lateinit("prefixexp")
+               * "expr_terminator"
 
-exp_right_recur = (binop + exp_terminator + maybe(lateinit("exp_right_recur")))
-                * "exp_right_recur"
+expr_right_recur = (binop + expr_terminator + maybe(lateinit("expr_right_recur")))
+                * "expr_right_recur"
 
-exp_ = (exp_terminator + maybe(exp_right_recur))
-     * "exp_"
+expr = (expr_terminator + maybe(expr_right_recur))
+     * "expr"
 
-field =((kw_bracket_open + exp_ + kw_bracket_close + kw_equals + exp_)
-      / (Name + kw_equals + exp_)
-      / exp_)
+field =((kw_bracket_open + expr + kw_bracket_close + kw_equals + expr)
+      / (Name + kw_equals + expr)
+      / expr)
       * "field"
 
 fieldlist =(field + maybemany(fieldsep + field) + maybe(fieldsep))
@@ -88,7 +92,7 @@ fieldlist =(field + maybemany(fieldsep + field) + maybe(fieldsep))
 tableconstructor =(kw_brace_open + maybe(fieldlist) + kw_brace_close)
                  * "tableconstructor"
 
-explist =(maybemany(exp_ + kw_comma) + exp_)
+explist =(maybemany(expr + kw_comma) + expr)
         * "explist"
 
 args =((kw_paren_open + maybe(explist) + kw_paren_close)
@@ -97,18 +101,27 @@ args =((kw_paren_open + maybe(explist) + kw_paren_close)
      * "args"
 
 var =((Name)
-    / (kw_bracket_open + exp_ + kw_bracket_close) 
+    / (kw_bracket_open + expr + kw_bracket_close)
     / (kw_dot + Name))
     * "var"
 
-functioncall = (maybe(kw_colon + Name) + args) 
-             * "functioncall"
-     
-prefixexp =(((var)
-            / (functioncall)
-            / ((kw_paren_open + exp_ + kw_paren_close)))
-          + maybe(prefixexp))
+expr_functioncall = (maybe(kw_colon + Name) + args) 
+             * "expr_functioncall"
+
+varorexp =((var)
+         / (kw_paren_open + expr + kw_paren_close))
+         * "varorexp"
+
+prefixexp =((varorexp / expr_functioncall)
+          + maybe(lateinit("prefixexp")))
           * "prefixexp"
+          
+prefixstat =((expr_functioncall + maybe(lateinit("prefixstat"))))
+           / (varorexp + lateinit("prefixstat"))
+           * "prefixstat"
+          
+stat_functioncall = (varorexp + prefixstat)
+                  * "stat_functioncall"
 
 varlist =(var + maybemany(kw_comma + var))
         * "varlist"
@@ -121,12 +134,12 @@ laststat =((kw_return + maybe(explist))
          * "laststat"
 
 stat =((varlist + kw_equals + explist)
-     / functioncall
+     / stat_functioncall
      / (kw_do + block + kw_end)
-     / (kw_while + exp_ + kw_do + block + kw_end)
-     / (kw_repeat + block + kw_until + exp_)
-     / (kw_if + exp_ + kw_then + block + maybemany(kw_elseif + exp_ + kw_then + block) + maybe(kw_else + block) + kw_end)
-     / (kw_for + Name + kw_equals + exp_ + kw_comma + exp_ + maybe(kw_comma + exp_) + kw_do + block + kw_end)
+     / (kw_while + expr + kw_do + block + kw_end)
+     / (kw_repeat + block + kw_until + expr)
+     / (kw_if + expr + kw_then + block + maybemany(kw_elseif + expr + kw_then + block) + maybe(kw_else + block) + kw_end)
+     / (kw_for + Name + kw_equals + expr + kw_comma + expr + maybe(kw_comma + expr) + kw_do + block + kw_end)
      / (kw_for + namelist + kw_in + explist + kw_do + block + kw_end)
      / (kw_function + funcname + funcbody)
      / (kw_local + namelist + maybe(kw_equals + explist)))
@@ -134,6 +147,9 @@ stat =((varlist + kw_equals + explist)
 
 chunk =(maybemany(stat + maybe(kw_semicolon)) + maybe(laststat + maybe(kw_semicolon)))
       * "chunk"
+
+-- New syntax to introduce could use this?
+-- lambdabody =(maybe(maybe(stat + maybe(kw_semicolon)) + returnWrapper(expr)))
 
 initialiseLateInitRepo(_G)
 
@@ -145,19 +161,64 @@ local function parse(parser, str, startAt)
 end
 
 
-if_statement = (kw_if + exp_ + kw_then + block --[[ + maybemany(kw_elseif + exp_ + kw_then + block) + maybe(kw_else + block) + kw_end]] )
+if_statement = (kw_if + expr + kw_then + block + maybemany(kw_elseif + expr + kw_then + block) + maybe(kw_else + block) + kw_end )
              * "if_statement"
 
-local tests = { 
-  { if_statement, "if true then print('true!') else print 'false :(' end" },
-  --{ exp_, "true" },
-  --{ Name, "if true then print('true!')", 13 }
+local tests = {
+  --[[test { if_statement, "if true then print('true!') else print 'false :(' end" }, test]]
+  --[[test { expr_, "true" }, test]]
+  --[[test { Name, "if true then print('true!')", 13 }, test]]
+  --[[test { block, "print('true!')" }, test]]
+  --[[{ block, 
+kw = function(str)
+  return setmetatable(toChars(str), { 
+    __call = kwCompare, 
+    __add = patternIntersection, 
+    __div = patternUnion,
+    __len = function() return #str end,
+    __tostring = function() return str end
+  })
+end }, ]]
+  --[[test { block, -- I removed the multiline string markers because they break the comment
+keywordExports = {
+  kw_do = kw "do",
+	kw_if = kw "if",
+	kw_in = kw "in",
+	kw_or = kw "or",
+	kw_end = kw "end",
+	kw_for = kw "for",
+	kw_nil = kw "nil",
+	kw_and = kw "and",
+	kw_not = kw "not",
+	kw_then = kw "then",
+	kw_else = kw "else",
+	kw_true = kw "true",
+	kw_while = kw "while",
+	kw_until = kw "until",
+	kw_local = kw "local",
+	kw_break = kw "break",
+	kw_false = kw "false",
+	kw_repeat = kw "repeat",
+	kw_elseif = kw "elseif",
+	kw_return = kw "return",
+	kw_function = kw "function"
+}
+ }, 
+test]]
+  { block, "while strIdx:getValue(idx) == ' ' do idx = idx + 1 end" },
+  { block, 'keywordExports = { kw_do = kw "do", kw_if = kw "if", kw_in = kw "in", kw_or = kw "or", kw_end = kw "end", }' },
+  { block, 'kw = function(str) return setmetatable(toChars(str), { __call = kwCompare, __add = patternIntersection, __div = patternUnion, __len = function() return #str end, __tostring = function() return str end }) end' }
 }
 
 for _, test in ipairs(tests) do
   local parser = test[1]
   local toParse = test[2]
   local startAt = test[3] or 1
+  local startTime, stopTime
   
-  print("|==========|", "Running:", parser, "on:", toParse, "startingAt:", startAt, "it returns:", parse(parser, toParse, startAt))
+  print("|=============#", "Running:", parser, "on:", toParse, "startingAt:", startAt)
+  startTime = os.time()
+  print("|=============#", "it returns:", parse(parser, toParse, startAt))
+  stopTime = os.time()
+  print("|=============#", "it took:", stopTime - startTime)
 end
