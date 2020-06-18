@@ -30,7 +30,7 @@ The representation used by eLu differs from the standard in the following ways:
 |-----------------|-------------------|--------------------------|
 | Definition      | =                 | =                        |
 | Concatenation   | ,                 | +                        |
-| Termination     | ;                 | <Not used>               |
+| Termination     | ;                 | \<Not used>              |
 | Alternation     | \|                | /                        |
 | Optional        | [ ... ]           | maybe(...)               |
 | Zero or more    | { ... }           | maybemany(...)           |
@@ -39,7 +39,7 @@ The representation used by eLu differs from the standard in the following ways:
 | Terminal string | " ... "           | Found in terminators.lua |
 | Terminal string | ' ... '           | Found in terminators.lua |
 | Comment         | (* ... *)         | --[[ ... ]]              |
-| Exception       | -                 | <Not used>               |
+| Exception       | -                 | \<Not used>              |
 
 Be cautious - BIDMAS ordering of operators is still in effect, so you'll need to use parenthesis to ensure that your patterns are interpreted correctly.
 
