@@ -2,10 +2,10 @@ local List = {}
 
 List.__index = List
 
-List.null = setmetatable({ head = false, tail = false }, List)
+List.null = setmetatable({ head = false, tail = false, length = 0 }, List)
 
 function List.cons(head, tail)
-  return setmetatable({ head = head, tail = tail }, List)
+  return setmetatable({ head = head, tail = tail, length = tail.length + 1 }, List)
 end
 
 function List.getHead(tbl)
@@ -14,6 +14,10 @@ end
 
 function List.getTail(tbl)
   return tbl.tail
+end
+
+function List.getLength(tbl)
+  return tbl.length
 end
 
 local function setValue(val, tbl, idx)
@@ -52,7 +56,7 @@ end
 
 
 function List.__tostring(instance)
-  return table.concat(instance:take(), " ")
+  return table.concat(instance:take())
 end
 
 return List

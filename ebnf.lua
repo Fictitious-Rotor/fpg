@@ -39,7 +39,7 @@ String = packString(Whitespace +
                      / (kw_multiline_open + maybemany(notPattern(kw_multiline_close)) + kw_multiline_close)))
        * "String"
 
-Number =(Whitespace + many(Digit) + maybe(kw_dot + many(Digit)))
+Number = packString(Whitespace + many(Digit) + maybe(kw_dot + many(Digit)))
        * "Number"
 
 namelist =(Name
@@ -148,17 +148,15 @@ initialiseLateInitRepo(_G)
 
 -------------------
 
-local function parse(parser, str, startAt)
-  local finalStrIdx, parsedStrs = parser(StringIndexer.new(toChars(str), startAt or 1), null)
-  return parsedStrs
+local function parse(str)
+  local finalStrIdx, parsedStrs = block(StringIndexer.new(toChars(str), 1), null)
+  return tostring(parsedStrs)
 end
 
 local tests = {
-  { block, "if true then print('true!') else print 'false :(' end" },
-  { expr, "true" },
-  { Name, "if true then print('true!')", 13 },
-  { block, "print('true!')" },
-  --[=[{ block, [[
+  "if true then print('true!') else print 'false :(' end return true",
+  "print('true!') return true",
+[[
 kw = function(str)
   return setmetatable(toChars(str), { 
     __call = kwCompare, 
@@ -167,41 +165,58 @@ kw = function(str)
     __len = function() return #str end,
     __tostring = function() return str end
   })
-end ]] }, ]=]
-  --[=[test { block, [[
+end
+return true
+]],
+[[
 keywordExports = {
   kw_do = kw "do",
-	kw_if = kw "if",
-	kw_in = kw "in",
-	kw_or = kw "or",
-	kw_end = kw "end",
-	kw_for = kw "for",
-	kw_nil = kw "nil",
-	kw_and = kw "and",
-	kw_not = kw "not",
-	kw_then = kw "then",
-	kw_else = kw "else",
-	kw_true = kw "true",
-	kw_while = kw "while",
-	kw_until = kw "until",
-	kw_local = kw "local",
-	kw_break = kw "break",
-	kw_false = kw "false",
-	kw_repeat = kw "repeat",
-	kw_elseif = kw "elseif",
-	kw_return = kw "return",
-	kw_function = kw "function"
-} ]] }, test]=]
-  { block, "while strIdx:getValue(idx) == ' ' do idx = idx + 1 end" },
-  { block, 'keywordExports = { kw_do = kw "do", kw_if = kw "if", kw_in = kw "in", kw_or = kw "or", kw_end = kw "end", }' },
-  { block, 'kw = function(str) return setmetatable(toChars(str), { __call = kwCompare, __add = patternIntersection, __div = patternUnion, __len = function() return #str end, __tostring = function() return str end }) end' }
+  kw_if = kw "if",
+  kw_in = kw "in",
+  kw_or = kw "or",
+  kw_end = kw "end",
+  kw_for = kw "for",
+  kw_nil = kw "nil",
+  kw_and = kw "and",
+  kw_not = kw "not",
+  kw_then = kw "then",
+  kw_else = kw "else",
+  kw_true = kw "true",
+  kw_while = kw "while",
+  kw_until = kw "until",
+  kw_local = kw "local",
+  kw_break = kw "break",
+  kw_false = kw "false",
+  kw_repeat = kw "repeat",
+  kw_elseif = kw "elseif",
+  kw_return = kw "return",
+  kw_function = kw "function"
+}
+return true
+]],
+[[
+local strIdx = {}
+function strIdx:getValue() return 'no' end
+
+while strIdx:getValue(idx) == ' ' do 
+  idx = idx + 1
+end
+
+return true
+]],
+[[
+return(function()returntrueend)()
+]],
+[[
+returnVariable = 4
+return true
+]]
 }
 
-for _, test in ipairs(tests) do
-  local parser = test[1]
-  local toParse = test[2]
-  local startAt = test[3] or 1
-  
-  print("|=============#", "Running:", parser, "on:", toParse, "startingAt:", startAt)
-  print("|=============#", "it returns:", parse(parser, toParse, startAt))
+for _, toParse in ipairs(tests) do
+  print("|=============#", "Running:", toParse)
+  local parsed = parse(toParse)
+  print("|=============#", "it returns:", parsed)
+  local loaded = load(parsed)
+  print("|=============#", "Function succeeds?", loaded())
 end

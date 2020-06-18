@@ -23,7 +23,7 @@ local function skipWhitespace(strIdx)
   repeat
     idx = idx + 1
     value = strIdx:getValue(idx)
-  until not (value == ' ' or value == '\n')
+  until not (value == ' ' or value == '\r' or value == '\n')
   
   return idx
 end
@@ -55,6 +55,23 @@ local function skipComments(strIdx)
   end
 end
 
+local function setValue(tbl, val, idx)
+  tbl[idx] = val
+  return tbl
+end
+
+local function indentedPrint(parsed, message, ...)
+  local function getSpaces(count)
+    return count == 0 
+       and {}
+        or setValue(getSpaces(count - 1), "  ", count)    
+  end
+  
+  local prefixSpaces = table.concat(getSpaces(parsed:getLength()))
+  
+  print(prefixSpaces .. message, ...)
+end
+
 
 --[=====================]--
 --|Higher Order Patterns|-------------------------------------------------------------------------------------
@@ -77,14 +94,14 @@ end
 -- Pattern AND operator
 local patternIntersection = function(left, right)
   return pattern(function(_, strIdx, parsed)
-    print("About to run left fn:", left)
+    indentedPrint(parsed, "About to run left fn:", left)
     local leftStrIdx, leftParsed = left(strIdx, parsed)
-    print("Intersection left pattern", left, "leftStrIdx", leftStrIdx, "produced", leftParsed)
+    indentedPrint(parsed, "Intersection left pattern", left, "leftStrIdx", leftStrIdx, "produced", leftParsed)
     
     if leftStrIdx then
-      print("About to run right fn:", right)
+      indentedPrint(parsed, "About to run right fn:", right)
       local rightStrIdx, rightParsed = right(leftStrIdx, leftParsed)
-      print("Intersection right pattern", right, "rightStrIdx", rightStrIdx, "produced", rightParsed)
+      indentedPrint(parsed, "Intersection right pattern", right, "rightStrIdx", rightStrIdx, "produced", rightParsed)
       
       if rightStrIdx then        
         return rightStrIdx, rightParsed
@@ -99,14 +116,14 @@ end
 local patternUnion = function(left, right)
   return pattern(function(_, strIdx, parsed)
     local leftStrIdx, leftParsed = left(strIdx, parsed)
-    print("Union left pattern", left, "leftStrIdx", leftStrIdx, "produced", leftParsed)
+    indentedPrint(parsed, "Union left pattern", left, "leftStrIdx", leftStrIdx, "produced", leftParsed)
     
     if leftStrIdx then
       return leftStrIdx, leftParsed 
     end
     
     local rightStrIdx, rightParsed = right(strIdx, parsed)
-    print("Union right pattern", right, "rightStrIdx", rightStrIdx, "produced", rightParsed)
+    indentedPrint(parsed, "Union right pattern", right, "rightStrIdx", rightStrIdx, "produced", rightParsed)
     
     return rightStrIdx, rightParsed
   end) * ("(" .. tostring(left) .. " / " .. tostring(right) .. ")")
@@ -166,7 +183,7 @@ local function checkNotKeywordThenPack(childPattern)
     
     local function loop(gen, tbl, state)
       local kwName, kwParser = gen(tbl, state)
-      print("Checking against parser:", kwParser, "with name of:", kwName)
+      indentedPrint(parsed, "Checking against parser:", kwParser, "with name of:", kwName)
     
       return kwParser
          and ((#kwParser == #whatChildParsed and kwParser(parsedIndexer, null))
@@ -174,13 +191,13 @@ local function checkNotKeywordThenPack(childPattern)
     end
     
     local matchesAnyKeyword = loop(pairs(keywordExports))
-    print("Checking keywords...", "matchesAnyKeyword", table.concat(whatChildParsed), "matchesAnyKeyword", matchesAnyKeyword)
+    indentedPrint(parsed, "Checking keywords...", "matchesAnyKeyword", table.concat(whatChildParsed), "matchesAnyKeyword", matchesAnyKeyword)
     
     if matchesAnyKeyword then
       return false
     else
       local packed = table.concat(whatChildParsed)
-      print("checkNotKeywordThenPack: packing value to be:", packed)
+      indentedPrint(parsed, "checkNotKeywordThenPack: packing value to be:", packed)
       return returnedStrIdx, cons(packed, parsed)
     end
   end) * ("checkNotKeywordThenPack(" .. tostring(childPattern) .. ")")
@@ -195,8 +212,8 @@ local function packString(childPattern)
     
     if not returnedStrIdx then return false end
     
-    local packed = table.concat(returnedParsed:take()) -- reimplemented here, as tostring adds whitespace between each character
-    print("packString: packing value to be:", packed)
+    local packed = tostring(returnedParsed)
+    indentedPrint(parsed, "packString: packing value to be:", packed)
     return returnedStrIdx, cons(packed, parsed)
   end) * ("packString(" .. tostring(childPattern) .. ")")
 end
@@ -233,12 +250,20 @@ pattern = function(fn)
 end
 
 kw = function(str)
-  return setmetatable(toChars(str), { 
+  local spacedStr = " " .. str .. " "
+  
+  return sym(str, spacedStr)
+end
+
+sym = function(matchStr, tostringStr)
+  local tostringStr = tostringStr or matchStr
+  
+  return setmetatable(toChars(matchStr), { 
     __call = kwCompare, 
     __add = patternIntersection, 
     __div = patternUnion,
-    __len = function() return #str end,
-    __tostring = function() return str end
+    __len = function() return #matchStr end,
+    __tostring = function() return tostringStr end
   })
 end
 
@@ -350,37 +375,37 @@ keywordExports = {
 }
 
 local symbolExports = {
-  kw_multiline_close = kw "]]",
-  kw_multiline_open = kw "[[",
-  kw_bracket_close = kw "]",
-	kw_bracket_open = kw "[",
-	kw_brace_close = kw "}",
-	kw_paren_close = kw ")",
-  kw_speech_mark = kw '"',
-	kw_ellipsis = kw "...",
-	kw_paren_open = kw "(",
-  kw_backslash = kw "\\",
-	kw_brace_open = kw "{",
-	kw_are_equal = kw "==",
-	kw_not_equal = kw "~=",
-	kw_semicolon = kw ";",
-	kw_concat = kw "..",
-	kw_equals = kw "=",
-	kw_divide = kw "/",
-	kw_modulo = kw "%",
-	kw_length = kw "#",
-	kw_caret = kw "^",
-	kw_comma = kw ",",
-	kw_colon = kw ":",
-	kw_minus = kw "-",
-  kw_quote = kw "'",
-	kw_times = kw "*",
-	kw_plus = kw "+",
-	kw_lte = kw "<=",
-	kw_gte = kw ">=",
-	kw_dot = kw ".",
-	kw_lt = kw "<",
-	kw_gt = kw ">"
+  kw_multiline_close = sym "]]",
+  kw_multiline_open = sym "[[",
+  kw_bracket_close = sym "]",
+	kw_bracket_open = sym "[",
+	kw_brace_close = sym "}",
+	kw_paren_close = sym ")",
+  kw_speech_mark = sym '"',
+	kw_ellipsis = sym "...",
+	kw_paren_open = sym "(",
+  kw_backslash = sym "\\",
+	kw_brace_open = sym "{",
+	kw_are_equal = sym "==",
+	kw_not_equal = sym "~=",
+	kw_semicolon = sym ";",
+	kw_concat = sym "..",
+	kw_equals = sym "=",
+	kw_divide = sym "/",
+	kw_modulo = sym "%",
+	kw_length = sym "#",
+	kw_caret = sym "^",
+	kw_comma = sym ",",
+	kw_colon = sym ":",
+	kw_minus = sym "-",
+  kw_quote = sym "'",
+	kw_times = sym "*",
+	kw_plus = sym "+",
+	kw_lte = sym "<=",
+	kw_gte = sym ">=",
+	kw_dot = sym ".",
+	kw_lt = sym "<",
+	kw_gt = sym ">"
 }
 
 local exports = {
