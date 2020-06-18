@@ -74,20 +74,20 @@ local kwCompare = function(keyword, strIdx, parsed)
   return strIdx:withIndex(pos), cons(tostring(keyword), parsed)
 end
 
--- Intersection of two checks, returns either the index after both patterns, followed by a table of both patterns represented as strings or false
+-- Pattern AND operator
 local patternIntersection = function(left, right)
   return pattern(function(_, strIdx, parsed)
     print("About to run left fn:", left)
-    local strIdxAfterLeft, leftParsed = left(strIdx, parsed)
-    print("Intersection left pattern", left, "strIdxAfterLeft", strIdxAfterLeft, "produced", leftParsed)
+    local leftStrIdx, leftParsed = left(strIdx, parsed)
+    print("Intersection left pattern", left, "leftStrIdx", leftStrIdx, "produced", leftParsed)
     
-    if strIdxAfterLeft then
+    if leftStrIdx then
       print("About to run right fn:", right)
-      local strIdxAfterRight, rightParsed = right(strIdxAfterLeft, leftParsed)
-      print("Intersection right pattern", right, "strIdxAfterRight", strIdxAfterRight, "produced", rightParsed)
+      local rightStrIdx, rightParsed = right(leftStrIdx, leftParsed)
+      print("Intersection right pattern", right, "rightStrIdx", rightStrIdx, "produced", rightParsed)
       
-      if strIdxAfterRight then        
-        return strIdxAfterRight, rightParsed
+      if rightStrIdx then        
+        return rightStrIdx, rightParsed
       end
     end
     
@@ -95,63 +95,66 @@ local patternIntersection = function(left, right)
   end) * ("(" .. tostring(left) .. " + " .. tostring(right) .. ")")
 end
 
--- Union of two checks, returns either left or right
+-- Pattern OR operator
 local patternUnion = function(left, right)
   return pattern(function(_, strIdx, parsed)
-    local strIdxAfterLeft, leftParsed = left(strIdx, parsed)
-    print("Union left pattern", left, "strIdxAfterLeft", strIdxAfterLeft, "produced", leftParsed)
+    local leftStrIdx, leftParsed = left(strIdx, parsed)
+    print("Union left pattern", left, "leftStrIdx", leftStrIdx, "produced", leftParsed)
     
-    if strIdxAfterLeft then
-      return strIdxAfterLeft, leftParsed 
+    if leftStrIdx then
+      return leftStrIdx, leftParsed 
     end
     
-    local strIdxAfterRight, rightParsed = right(strIdx, parsed)
-    print("Union right pattern", right, "strIdxAfterRight", strIdxAfterRight, "produced", rightParsed)
+    local rightStrIdx, rightParsed = right(strIdx, parsed)
+    print("Union right pattern", right, "rightStrIdx", rightStrIdx, "produced", rightParsed)
     
-    return strIdxAfterRight, rightParsed
+    return rightStrIdx, rightParsed
   end) * ("(" .. tostring(left) .. " / " .. tostring(right) .. ")")
 end
 
+-- Pattern appears zero or one times. Similar to '?' in regex
 local function maybe(childPattern)
   return pattern(function(_, strIdx, parsed)
-    local strIdxAfterChildPattern, childPatternParsed = childPattern(strIdx, parsed)
+    local childStrIdx, childParsed = childPattern(strIdx, parsed)
     
-    if strIdxAfterChildPattern then
-      return strIdxAfterChildPattern, childPatternParsed
+    if childStrIdx then
+      return childStrIdx, childParsed
     else
       return strIdx, parsed
     end
   end) * ("maybe(" .. tostring(childPattern) .. ")")
 end 
 
-
--- Vulnerable to stack overflow. Might need to convert to for loop.
+-- Pattern appears one or more times. Similar to '+' in regex
 local function many(childPattern)
   return pattern(function(_, strIdx, parsed)
-    local function matchChildPattern(strIdx, parsed, nesting)
-      local strIdxAfterChildPattern, childPatternParsed = childPattern(strIdx, parsed)
-      
-      if strIdxAfterChildPattern then
-        local strIdxAfterRecursion, recursionParsed = matchChildPattern(strIdxAfterChildPattern, childPatternParsed, nesting + 1)
-        
-        if strIdxAfterRecursion then
-          return strIdxAfterRecursion, recursionParsed
-        else
-          return strIdxAfterChildPattern, childPatternParsed
-        end
+    local function unpackReturn(packed)
+      if packed then
+        return packed[1], packed[2]
+      else
+        return false
       end
+    end
+  
+    local function matchChildPattern(strIdx, parsed)
+      local childStrIdx, childParsed = childPattern(strIdx, parsed)
       
-      return false
+      return childStrIdx
+         and (matchChildPattern(childStrIdx, childParsed)
+              or { childStrIdx, childParsed })
     end
     
-    return matchChildPattern(strIdx, parsed, 1)
+    return unpackReturn(matchChildPattern(strIdx, parsed))
   end) * ("many(" .. tostring(childPattern) .. ")")
 end
 
+-- Pattern appears zero or more times. Similar to '*' in regex
 local function maybemany(childPattern)
   return maybe(many(childPattern))
 end
 
+-- Variables cannot share a name with a keyword. This rule clears up otherwise ambiguous syntax
+-- Also packs variable names (see packString for details)
 local function checkNotKeywordThenPack(childPattern)
   return pattern(function(_, strIdx, parsed)
     local returnedStrIdx, returnedParsed = childPattern(strIdx, null)
@@ -183,18 +186,22 @@ local function checkNotKeywordThenPack(childPattern)
   end) * ("checkNotKeywordThenPack(" .. tostring(childPattern) .. ")")
 end
 
+-- All syntax is delimited with spaces in the output.
+-- A string put through this would come out as " e n d ".
+-- This function packs the child patterns into a single string, which is delimited correctly.
 local function packString(childPattern)
   return pattern(function(_, strIdx, parsed)
     local returnedStrIdx, returnedParsed = childPattern(strIdx, null)
     
     if not returnedStrIdx then return false end
     
-    local packed = table.concat(returnedParsed:take()) -- tostring adds spaces
+    local packed = table.concat(returnedParsed:take()) -- reimplemented here, as tostring adds whitespace between each character
     print("packString: packing value to be:", packed)
     return returnedStrIdx, cons(packed, parsed)
   end) * ("packString(" .. tostring(childPattern) .. ")")
 end
 
+-- Consumes a single character given that childPattern fails to match.
 local function notPattern(childPattern)
   return pattern(function(_, strIdx, parsed)
     local value = strIdx:getValue()

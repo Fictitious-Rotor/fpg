@@ -32,15 +32,16 @@ block =(lateinit("chunk"))
 Name =(checkNotKeywordThenPack(Whitespace + Alphabetic + maybemany(Alphanumeric)))
      * "Name"
 
+-- Introduce support for [===[ [==[ [=[ [[]] ]=] ]==] ]===]
 String = packString(Whitespace + 
                     ((kw_speech_mark + maybemany((kw_backslash + kw_speech_mark) / notPattern(kw_speech_mark)) + kw_speech_mark)
                      / (kw_quote + maybemany((kw_backslash + kw_quote) / notPattern(kw_quote)) + kw_quote)
                      / (kw_multiline_open + maybemany(notPattern(kw_multiline_close)) + kw_multiline_close)))
        * "String"
-       
+
 Number =(Whitespace + many(Digit) + maybe(kw_dot + many(Digit)))
        * "Number"
-      
+
 namelist =(Name
          / maybemany(kw_comma + Name))
          * "namelist"
@@ -152,16 +153,12 @@ local function parse(parser, str, startAt)
   return parsedStrs
 end
 
-
-if_statement = (kw_if + expr + kw_then + block + maybemany(kw_elseif + expr + kw_then + block) + maybe(kw_else + block) + kw_end )
-             * "if_statement"
-
 local tests = {
-  --[[test { if_statement, "if true then print('true!') else print 'false :(' end" }, test]]
-  --[[test { expr_, "true" }, test]]
-  --[[test { Name, "if true then print('true!')", 13 }, test]]
-  --[[test { block, "print('true!')" }, test]]
-  --[[{ block, 
+  { block, "if true then print('true!') else print 'false :(' end" },
+  { expr, "true" },
+  { Name, "if true then print('true!')", 13 },
+  { block, "print('true!')" },
+  --[=[{ block, [[
 kw = function(str)
   return setmetatable(toChars(str), { 
     __call = kwCompare, 
@@ -170,8 +167,8 @@ kw = function(str)
     __len = function() return #str end,
     __tostring = function() return str end
   })
-end }, ]]
-  --[[test { block, -- I removed the multiline string markers because they break the comment
+end ]] }, ]=]
+  --[=[test { block, [[
 keywordExports = {
   kw_do = kw "do",
 	kw_if = kw "if",
@@ -194,9 +191,7 @@ keywordExports = {
 	kw_elseif = kw "elseif",
 	kw_return = kw "return",
 	kw_function = kw "function"
-}
- }, 
-test]]
+} ]] }, test]=]
   { block, "while strIdx:getValue(idx) == ' ' do idx = idx + 1 end" },
   { block, 'keywordExports = { kw_do = kw "do", kw_if = kw "if", kw_in = kw "in", kw_or = kw "or", kw_end = kw "end", }' },
   { block, 'kw = function(str) return setmetatable(toChars(str), { __call = kwCompare, __add = patternIntersection, __div = patternUnion, __len = function() return #str end, __tostring = function() return str end }) end' }
@@ -206,11 +201,7 @@ for _, test in ipairs(tests) do
   local parser = test[1]
   local toParse = test[2]
   local startAt = test[3] or 1
-  local startTime, stopTime
   
   print("|=============#", "Running:", parser, "on:", toParse, "startingAt:", startAt)
-  startTime = os.time()
   print("|=============#", "it returns:", parse(parser, toParse, startAt))
-  stopTime = os.time()
-  print("|=============#", "it took:", stopTime - startTime)
 end
