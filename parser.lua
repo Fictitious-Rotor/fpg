@@ -189,7 +189,7 @@ local function packString(childPattern)
     
     if not returnedStrIdx then return false end
     
-    local packed = tostring(returnedParsed)
+    local packed = table.concat(returnedParsed:take()) -- tostring adds spaces
     print("packString: packing value to be:", packed)
     return returnedStrIdx, cons(packed, parsed)
   end) * ("packString(" .. tostring(childPattern) .. ")")

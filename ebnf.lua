@@ -32,20 +32,12 @@ block =(lateinit("chunk"))
 Name =(checkNotKeywordThenPack(Whitespace + Alphabetic + maybemany(Alphanumeric)))
      * "Name"
 
-
 String = packString(Whitespace + 
                     ((kw_speech_mark + maybemany((kw_backslash + kw_speech_mark) / notPattern(kw_speech_mark)) + kw_speech_mark)
                      / (kw_quote + maybemany((kw_backslash + kw_quote) / notPattern(kw_quote)) + kw_quote)
                      / (kw_multiline_open + maybemany(notPattern(kw_multiline_close)) + kw_multiline_close)))
        * "String"
        
---[[
-String =((Whitespace + 
-          ((kw_speech_mark + maybemany(EscapableChar) + kw_speech_mark)
-         / (kw_quote + maybemany(EscapableChar) + kw_quote))))
-       * "String"
-]]
-
 Number =(Whitespace + many(Digit) + maybe(kw_dot + many(Digit)))
        * "Number"
       
