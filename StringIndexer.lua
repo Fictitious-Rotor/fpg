@@ -27,7 +27,7 @@ function StringIndex:getValue(givenIdx)
 end
 
 function StringIndex:__tostring()
-  return "position: " .. self.idx .. " in: " .. table.concat(self.tbl)
+  return "position: " .. self.idx
 end
 
 return StringIndex

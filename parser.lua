@@ -1,7 +1,11 @@
-view = require "debugview"
-StringIndexer = require "StringIndexer"
+local index_G = { __index = _G }
+local _ENV = setmetatable({ _G = _G}, index_G) -- Declare sandbox
+
+local view = require "debugview"
+local StringIndexer = require "StringIndexer"
 local list = require "SinglyLinkedList"
-null = list.null
+
+local null = list.null
 local cons = list.cons
 
 local pattern, kw, keywordExports -- Declared here as they are referenced in the higher order patterns
@@ -60,25 +64,33 @@ local function setValue(tbl, val, idx)
   return tbl
 end
 
-local function indentedPrint(parsed, message, ...)
-  local function getSpaces(count)
-    return count == 0 
-       and {}
-        or setValue(getSpaces(count - 1), "  ", count)    
+local function _logOptional(msg1, pat, msg2, strIdx, msg3, parsed)
+  local stringValue = tostring(pat)
+
+  if (not (stringValue == "ignore" and type(pat) == "table")) then
+    if msg2 then
+      print(msg1, stringValue, msg2, strIdx, msg3, parsed and table.concat(parsed:take(35)))
+    else
+      print(msg1, pat)
+    end
   end
-  
-  local prefixSpaces = table.concat(getSpaces(parsed:getLength()))
-  
-  print(prefixSpaces .. message, ...)
 end
 
+
+local function stub() end
+
+-- Exchange print and indentedPrint to 'stub' to disable logging.
+local _print = print
+local print = _print
+
+local logOptional = _logOptional
 
 --[=====================]--
 --|Higher Order Patterns|-------------------------------------------------------------------------------------
 --[=====================]--
 
 -- Advance pointer if contents of table matches eluChars at idx
-local kwCompare = function(keyword, strIdx, parsed)
+local function kwCompare(keyword, strIdx, parsed)
   local pos = skipWhitespace(strIdx)
 
   for _, c in ipairs(keyword) do
@@ -92,16 +104,19 @@ local kwCompare = function(keyword, strIdx, parsed)
 end
 
 -- Pattern AND operator
-local patternIntersection = function(left, right)
+local function patternIntersection(left, right)
+  if not left then error("Missing left pattern") end
+  if not right then error("Missing right pattern") end
+  
   return pattern(function(_, strIdx, parsed)
-    indentedPrint(parsed, "About to run left fn:", left)
+    logOptional("About to run intersection left:", left)
     local leftStrIdx, leftParsed = left(strIdx, parsed)
-    indentedPrint(parsed, "Intersection left pattern", left, "leftStrIdx", leftStrIdx, "produced", leftParsed)
+    logOptional("INTERSECTION LEFT PATTERN", left, "LEFT STR IDX", leftStrIdx, "PRODUCED", leftParsed)
     
     if leftStrIdx then
-      indentedPrint(parsed, "About to run right fn:", right)
+      logOptional("About to run intersection right:", right)
       local rightStrIdx, rightParsed = right(leftStrIdx, leftParsed)
-      indentedPrint(parsed, "Intersection right pattern", right, "rightStrIdx", rightStrIdx, "produced", rightParsed)
+      logOptional("INTERSECTION RIGHT PATTERN", right, "RIGHT STR IDX", rightStrIdx, "PRODUCED", rightParsed)
       
       if rightStrIdx then        
         return rightStrIdx, rightParsed
@@ -113,24 +128,31 @@ local patternIntersection = function(left, right)
 end
 
 -- Pattern OR operator
-local patternUnion = function(left, right)
+local function patternUnion(left, right)
+  if not left then error("Missing left pattern") end
+  if not right then error("Missing right pattern") end
+  
   return pattern(function(_, strIdx, parsed)
+    logOptional("Union about to run left:", left)
     local leftStrIdx, leftParsed = left(strIdx, parsed)
-    indentedPrint(parsed, "Union left pattern", left, "leftStrIdx", leftStrIdx, "produced", leftParsed)
+    logOptional("UNION LEFT PATTERN", left, "LEFT STR IDX", leftStrIdx, "PRODUCED", leftParsed)
     
     if leftStrIdx then
       return leftStrIdx, leftParsed 
     end
     
+    logOptional("\nUnion about to run right:", right)
     local rightStrIdx, rightParsed = right(strIdx, parsed)
-    indentedPrint(parsed, "Union right pattern", right, "rightStrIdx", rightStrIdx, "produced", rightParsed)
+    logOptional("UNION RIGHT PATTERN", right, "RIGHT STR IDX", rightStrIdx, "PRODUCED", rightParsed)
     
     return rightStrIdx, rightParsed
   end) * ("(" .. tostring(left) .. " / " .. tostring(right) .. ")")
 end
 
 -- Pattern appears zero or one times. Similar to '?' in regex
-local function maybe(childPattern)
+function maybe(childPattern)
+  if not childPattern then error("Missing child pattern") end
+  
   return pattern(function(_, strIdx, parsed)
     local childStrIdx, childParsed = childPattern(strIdx, parsed)
     
@@ -143,7 +165,9 @@ local function maybe(childPattern)
 end 
 
 -- Pattern appears one or more times. Similar to '+' in regex
-local function many(childPattern)
+function many(childPattern)
+  if not childPattern then error("Missing child pattern") end
+  
   return pattern(function(_, strIdx, parsed)
     local function unpackReturn(packed)
       if packed then
@@ -166,13 +190,15 @@ local function many(childPattern)
 end
 
 -- Pattern appears zero or more times. Similar to '*' in regex
-local function maybemany(childPattern)
+function maybemany(childPattern)
   return maybe(many(childPattern))
 end
 
 -- Variables cannot share a name with a keyword. This rule clears up otherwise ambiguous syntax
 -- Also packs variable names (see packString for details)
-local function checkNotKeywordThenPack(childPattern)
+function checkNotKeywordThenPack(childPattern)
+  if not childPattern then error("Missing child pattern") end
+  
   return pattern(function(_, strIdx, parsed)
     local returnedStrIdx, returnedParsed = childPattern(strIdx, null)
     
@@ -183,7 +209,6 @@ local function checkNotKeywordThenPack(childPattern)
     
     local function loop(gen, tbl, state)
       local kwName, kwParser = gen(tbl, state)
-      indentedPrint(parsed, "Checking against parser:", kwParser, "with name of:", kwName)
     
       return kwParser
          and ((#kwParser == #whatChildParsed and kwParser(parsedIndexer, null))
@@ -191,13 +216,12 @@ local function checkNotKeywordThenPack(childPattern)
     end
     
     local matchesAnyKeyword = loop(pairs(keywordExports))
-    indentedPrint(parsed, "Checking keywords...", "matchesAnyKeyword", table.concat(whatChildParsed), "matchesAnyKeyword", matchesAnyKeyword)
-    
+        
     if matchesAnyKeyword then
       return false
     else
       local packed = table.concat(whatChildParsed)
-      indentedPrint(parsed, "checkNotKeywordThenPack: packing value to be:", packed)
+      print("checkNotKeywordThenPack: packing value to be:", packed)
       return returnedStrIdx, cons(packed, parsed)
     end
   end) * ("checkNotKeywordThenPack(" .. tostring(childPattern) .. ")")
@@ -206,20 +230,24 @@ end
 -- All syntax is delimited with spaces in the output.
 -- A string put through this would come out as " e n d ".
 -- This function packs the child patterns into a single string, which is delimited correctly.
-local function packString(childPattern)
+function packString(childPattern)
+  if not childPattern then error("Missing child pattern") end
+  
   return pattern(function(_, strIdx, parsed)
     local returnedStrIdx, returnedParsed = childPattern(strIdx, null)
     
     if not returnedStrIdx then return false end
     
     local packed = tostring(returnedParsed)
-    indentedPrint(parsed, "packString: packing value to be:", packed)
+    print("packString: packing value to be:", packed)
     return returnedStrIdx, cons(packed, parsed)
   end) * ("packString(" .. tostring(childPattern) .. ")")
 end
 
 -- Consumes a single character given that childPattern fails to match.
-local function notPattern(childPattern)
+function notPattern(childPattern)
+  if not childPattern then error("Missing child pattern") end
+  
   return pattern(function(_, strIdx, parsed)
     local value = strIdx:getValue()
   
@@ -272,7 +300,7 @@ end
 --|Terminator Patterns|---------------------------------------------------------------------------------------
 --[===================]--
 
-local Whitespace = pattern(function(_, strIdx, parsed)
+Whitespace = pattern(function(_, strIdx, parsed)
   return strIdx:withIndex(skipWhitespace(strIdx)), parsed
 end) * "Whitespace"
 
@@ -288,26 +316,27 @@ local function makeRxMatcher(regexPattern)
   end)
 end
 
-local Alphabetic = makeRxMatcher("[%a_]")
+Alphabetic = makeRxMatcher("[%a_]")
                  * "Alphabetic"
 
-local Digit = makeRxMatcher("%d")
+Digit = makeRxMatcher("%d")
             * "Digit"
             
-local Alphanumeric = makeRxMatcher("[%w_]")
+Alphanumeric = makeRxMatcher("[%w_]")
                    * "Alphanumeric"
 
 local lateinitRepo = {}
 local lateinitNames = {}
 
 -- Permit circular references using a promise stored in the 'lateinitNames' table
-local function lateinit(childPatternName)
+function lateinit(childPatternName)
   lateinitNames[childPatternName] = true
   local childPattern
   
   return pattern(function(_, strIdx, parsed)
     if not childPattern then
       childPattern = lateinitRepo[childPatternName]
+      if not childPattern then error("Cannot load lateinit: " .. (childPatternName or "[No name]")) end
     end
     
     return childPattern(strIdx, parsed)
@@ -315,9 +344,9 @@ local function lateinit(childPatternName)
 end
 
 -- Initialise all promised references by drawing them from the provided table
-local function initialiseLateInitRepo(tbl)
+function initialiseLateInitRepo()
   for name, _ in pairs(lateinitNames) do
-    lateinitRepo[name] = tbl[name]
+    lateinitRepo[name] = _ENV[name]
   end
 end
 
@@ -325,30 +354,6 @@ end
 --[=======]--
 --|Exports|---------------------------------------------------------------------------------------------------
 --[=======]--
-
-local functionExports = {
-  -- Utilities
-  toChars = toChars,
-
-  -- Functions
-  maybe = maybe,
-  many = many,
-  maybemany = maybemany,
-  checkNotKeywordThenPack = checkNotKeywordThenPack,
-  packString = packString,
-  notPattern = notPattern,
-  
-  -- Terminators
-  Whitespace = Whitespace,
-  Alphabetic = Alphabetic,
-  Alphanumeric = Alphanumeric,
-  Digit = Digit,
-  EscapableChar = EscapableChar,
-  
-  -- Workarounds
-  lateinit = lateinit,
-  initialiseLateInitRepo = initialiseLateInitRepo
-}
 
 keywordExports = {
   kw_do = kw "do",
@@ -360,8 +365,9 @@ keywordExports = {
 	kw_nil = kw "nil",
 	kw_and = kw "and",
 	kw_not = kw "not",
-	kw_then = kw "then",
 	kw_else = kw "else",
+  kw_goto = kw "goto",
+	kw_then = kw "then",
 	kw_true = kw "true",
 	kw_while = kw "while",
 	kw_until = kw "until",
@@ -374,54 +380,56 @@ keywordExports = {
 	kw_function = kw "function"
 }
 
-local symbolExports = {
-  kw_multiline_close = sym "]]",
-  kw_multiline_open = sym "[[",
-  kw_bracket_close = sym "]",
-	kw_bracket_open = sym "[",
-	kw_brace_close = sym "}",
-	kw_paren_close = sym ")",
-  kw_speech_mark = sym '"',
-	kw_ellipsis = sym "...",
-	kw_paren_open = sym "(",
-  kw_backslash = sym "\\",
-	kw_brace_open = sym "{",
-	kw_are_equal = sym "==",
-	kw_not_equal = sym "~=",
-	kw_semicolon = sym ";",
-	kw_concat = sym "..",
-	kw_equals = sym "=",
-	kw_divide = sym "/",
-	kw_modulo = sym "%",
-	kw_length = sym "#",
-	kw_caret = sym "^",
-	kw_comma = sym ",",
-	kw_colon = sym ":",
-	kw_minus = sym "-",
-  kw_quote = sym "'",
-	kw_times = sym "*",
-	kw_plus = sym "+",
-	kw_lte = sym "<=",
-	kw_gte = sym ">=",
-	kw_dot = sym ".",
-	kw_lt = sym "<",
-	kw_gt = sym ">"
-}
 
-local exports = {
-  functionExports,
-  keywordExports,
-  symbolExports
-}
+kw_multiline_close = sym "]]"
+kw_multiline_open = sym "[["
+kw_bracket_close = sym "]"
+kw_bracket_open = sym "["
+kw_label_delim = sym "::"
+kw_brace_close = sym "}"
+kw_paren_close = sym ")"
+kw_speech_mark = sym '"'
+kw_ellipsis = sym "..."
+kw_paren_open = sym "("
+kw_backslash = sym "\\"
+kw_brace_open = sym "{"
+kw_are_equal = sym "=="
+kw_not_equal = sym "~="
+kw_semicolon = sym ";"
+kw_concat = sym ".."
+kw_equals = sym "="
+kw_divide = sym "/"
+kw_modulo = sym "%"
+kw_caret = sym "^"
+kw_comma = sym ","
+kw_colon = sym ":"
+kw_minus = sym "-"
+kw_quote = sym "'"
+kw_times = sym "*"
+kw_hash = sym "#"
+kw_plus = sym "+"
+kw_lte = sym "<="
+kw_gte = sym ">="
+kw_dot = sym "."
+kw_lt = sym "<"
+kw_gt = sym ">"
 
-setmetatable(exports, {
-  __call = function(exportTable) -- I've hard coded usage of two layers as patterns & keywords cannot be cleanly differentiated from export tables
-    for idx, subTable in pairs(exportTable) do
-      for k, v in pairs(subTable) do
-        rawset(_G, k, v)
-      end
-    end
-  end,
-})
 
-return exports
+setmetatable(_ENV, { __index = keywordExports }) -- Add keywords to environment
+_G.setmetatable(keywordExports, index_G) -- Ensure that _G is still accessible
+
+local fn, message = loadfile("ebnf.lua", "t", _ENV) -- Declare lua eBNF. Entrypoint is 'block'
+
+
+if fn then fn() else error(message) end
+
+local function parseChars(chars)
+  local _, parsedStrs = block(StringIndexer.new(chars, 1), null)
+  return tostring(parsedStrs)
+end
+
+local function parseString(str)
+  return parseChars(toChars(str))
+end
+
+return { parseString = parseString, parseChars = parseChars }
