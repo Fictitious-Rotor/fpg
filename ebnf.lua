@@ -1,4 +1,3 @@
--- Entrypoint
 block =(lateinit("chunk"))
       * "block"
 --
@@ -144,25 +143,41 @@ label =(kw_label_delim + Name + kw_label_delim)
 
 -- Statements
 
-do_statement =(kw_do + block + kw_end)
+do_statement =(kw_do 
+                + block
+             + kw_end)
              * "do statement"
 --
 goto_statement =(kw_goto + Name)
                * "goto"
 --
-while_statement =(kw_while + expr + kw_do + block + kw_end)
+while_statement =(kw_while + expr + kw_do
+                  + block
+                + kw_end)
                 * "while statement"
 --
-repeat_statement =(kw_repeat + block + kw_until + expr)
+repeat_statement =(kw_repeat
+                   + block
+                 + kw_until + expr)
                  * "repeat statement"
 --
-if_statement =(kw_if + expr + kw_then + block + maybemany(kw_elseif + expr + kw_then + block) + maybe(kw_else + block) + kw_end)
+if_statement =(kw_if + expr + kw_then
+               + block
+             + maybemany(kw_elseif + expr + kw_then
+               + block)
+             + maybe(kw_else
+               + block)
+             + kw_end)
              * "if statement"
 --
-for_loop =(kw_for + Name + kw_equals + expr + kw_comma + expr + maybe(kw_comma + expr) + kw_do + block + kw_end)
+for_loop =(kw_for + Name + kw_equals + expr + kw_comma + expr + maybe(kw_comma + expr) + kw_do
+           + block
+         + kw_end)
          * "for loop"
 --
-foreach_loop =(kw_for + namelist + kw_in + explist + kw_do + block + kw_end)
+foreach_loop =(kw_for + namelist + kw_in + explist + kw_do
+               + block
+             + kw_end)
              * "foreach loop"
 --
 function_declaration =(kw_function + funcname + funcbody)
@@ -202,4 +217,4 @@ initialiseLateInitRepo()
 -- New syntax to introduce could use this?
 -- lambdabody =(maybe(maybe(stat + maybe(kw_semicolon)) + returnWrapper(expr)))
 
--- Entrypoint is 'block'
+return block -- Entrypoint

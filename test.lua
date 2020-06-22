@@ -86,6 +86,7 @@ local function deepcopy(orig)
     end
     return copy
 end
+return true
 ]]
 }
 

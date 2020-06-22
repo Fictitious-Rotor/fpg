@@ -5,10 +5,10 @@ local view = require "debugview"
 local StringIndexer = require "StringIndexer"
 local list = require "SinglyLinkedList"
 
-local null = list.null
-local cons = list.cons
+null = list.null
+cons = list.cons
 
-local pattern, kw, keywordExports -- Declared here as they are referenced in the higher order patterns
+pattern, kw, keywordExports = true, true, true -- Declared here as they are referenced in the higher order patterns
 
 local function toChars(str)
   local out = {}
@@ -20,7 +20,7 @@ local function toChars(str)
   return out
 end
 
-local function skipWhitespace(strIdx)
+function skipWhitespace(strIdx)
   local idx = strIdx:getIndex() - 1
   local value
   
@@ -32,7 +32,8 @@ local function skipWhitespace(strIdx)
   return idx
 end
 
-local function skipComments(strIdx)
+-- TODO This needs to be revisited
+function skipComments(strIdx)
   local idx = strIndex:getIdx()
 
   if  (strIdx:getValue(idx) == '-') 
@@ -258,6 +259,33 @@ function notPattern(childPattern)
 end
 
 
+------ Lateinit
+
+local lateinitRepo = {}
+local lateinitNames = {}
+
+-- Permit circular references using a promise stored in the 'lateinitNames' table
+function lateinit(childPatternName)
+  lateinitNames[childPatternName] = true
+  local childPattern
+  
+  return pattern(function(_, strIdx, parsed)
+    if not childPattern then
+      childPattern = lateinitRepo[childPatternName]
+      if not childPattern then error("Cannot load lateinit: " .. (childPatternName or "[No name]")) end
+    end
+    
+    return childPattern(strIdx, parsed)
+  end) * childPatternName
+end
+
+-- Initialise all promised references by drawing them from the provided table
+function initialiseLateInitRepo()
+  for name, _ in pairs(lateinitNames) do
+    lateinitRepo[name] = _ENV[name]
+  end
+end
+
 --[==========]--
 --|Metatables|------------------------------------------------------------------------------------------------
 --[==========]--
@@ -295,136 +323,25 @@ sym = function(matchStr, tostringStr)
   })
 end
 
-
 --[===================]--
---|Terminator Patterns|---------------------------------------------------------------------------------------
+--|Loading and exports|---------------------------------------------------------------------------------------
 --[===================]--
 
-Whitespace = pattern(function(_, strIdx, parsed)
-  return strIdx:withIndex(skipWhitespace(strIdx)), parsed
-end) * "Whitespace"
-
-local function makeRxMatcher(regexPattern)
-  return pattern(function(_, strIdx, parsed)
-    local value = (strIdx:getValue() or ""):match(regexPattern)
-    
-    if value then
-      return strIdx:withFollowingIndex(), cons(value, parsed)
-    else
-      return false
-    end
-  end)
+local function loadFile(address)
+  local fn, message = loadfile(address, "t", _ENV)
+  return fn and fn() or error(message)
 end
 
-Alphabetic = makeRxMatcher("[%a_]")
-                 * "Alphabetic"
-
-Digit = makeRxMatcher("%d")
-            * "Digit"
-            
-Alphanumeric = makeRxMatcher("[%w_]")
-                   * "Alphanumeric"
-
-local lateinitRepo = {}
-local lateinitNames = {}
-
--- Permit circular references using a promise stored in the 'lateinitNames' table
-function lateinit(childPatternName)
-  lateinitNames[childPatternName] = true
-  local childPattern
-  
-  return pattern(function(_, strIdx, parsed)
-    if not childPattern then
-      childPattern = lateinitRepo[childPatternName]
-      if not childPattern then error("Cannot load lateinit: " .. (childPatternName or "[No name]")) end
-    end
-    
-    return childPattern(strIdx, parsed)
-  end) * childPatternName
-end
-
--- Initialise all promised references by drawing them from the provided table
-function initialiseLateInitRepo()
-  for name, _ in pairs(lateinitNames) do
-    lateinitRepo[name] = _ENV[name]
-  end
-end
-
-
---[=======]--
---|Exports|---------------------------------------------------------------------------------------------------
---[=======]--
-
-keywordExports = {
-  kw_do = kw "do",
-	kw_if = kw "if",
-	kw_in = kw "in",
-	kw_or = kw "or",
-	kw_end = kw "end",
-	kw_for = kw "for",
-	kw_nil = kw "nil",
-	kw_and = kw "and",
-	kw_not = kw "not",
-	kw_else = kw "else",
-  kw_goto = kw "goto",
-	kw_then = kw "then",
-	kw_true = kw "true",
-	kw_while = kw "while",
-	kw_until = kw "until",
-	kw_local = kw "local",
-	kw_break = kw "break",
-	kw_false = kw "false",
-	kw_repeat = kw "repeat",
-	kw_elseif = kw "elseif",
-	kw_return = kw "return",
-	kw_function = kw "function"
-}
-
-
-kw_multiline_close = sym "]]"
-kw_multiline_open = sym "[["
-kw_bracket_close = sym "]"
-kw_bracket_open = sym "["
-kw_label_delim = sym "::"
-kw_brace_close = sym "}"
-kw_paren_close = sym ")"
-kw_speech_mark = sym '"'
-kw_ellipsis = sym "..."
-kw_paren_open = sym "("
-kw_backslash = sym "\\"
-kw_brace_open = sym "{"
-kw_are_equal = sym "=="
-kw_not_equal = sym "~="
-kw_semicolon = sym ";"
-kw_concat = sym ".."
-kw_equals = sym "="
-kw_divide = sym "/"
-kw_modulo = sym "%"
-kw_caret = sym "^"
-kw_comma = sym ","
-kw_colon = sym ":"
-kw_minus = sym "-"
-kw_quote = sym "'"
-kw_times = sym "*"
-kw_hash = sym "#"
-kw_plus = sym "+"
-kw_lte = sym "<="
-kw_gte = sym ">="
-kw_dot = sym "."
-kw_lt = sym "<"
-kw_gt = sym ">"
-
+-- Load terminals
+keywordExports = loadFile("terminals.lua")
 
 setmetatable(_ENV, { __index = keywordExports }) -- Add keywords to environment
 _G.setmetatable(keywordExports, index_G) -- Ensure that _G is still accessible
 
-local fn, message = loadfile("ebnf.lua", "t", _ENV) -- Declare lua eBNF. Entrypoint is 'block'
-
-
-if fn then fn() else error(message) end
+local entrypoint = loadFile("ebnf.lua") -- Declare lua eBNF. Entrypoint is 'block'
 
 local function parseChars(chars)
-  local _, parsedStrs = block(StringIndexer.new(chars, 1), null)
+  local _, parsedStrs = entrypoint(StringIndexer.new(chars, 1), null)
   return tostring(parsedStrs)
 end
 
