@@ -273,7 +273,6 @@ function many(childPattern)
   end) * ("many(" .. tostring(childPattern) .. ")")
 end]]
 
--- Clever, but recurses infinitely. You'll have to use lateinit for this one.
 function many(childPattern)
 	if not childPattern then error("Missing child pattern") end
   
