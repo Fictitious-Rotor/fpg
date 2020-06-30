@@ -87,17 +87,133 @@ local function deepcopy(orig)
     return copy
 end
 return true
+]],
+[[
+local rawiter = function(obj, param, state)
+    assert(obj ~= nil, "invalid iterator")
+    if type(obj) == "table" then
+        local mt = getmetatable(obj);
+        if mt ~= nil then
+            if mt == iterator_mt then
+                return obj.gen, obj.param, obj.state
+            elseif mt.__ipairs ~= nil then
+                return mt.__ipairs(obj)
+            elseif mt.__pairs ~= nil then
+                return mt.__pairs(obj)
+            end
+        end
+        if #obj > 0 then
+            
+            return ipairs(obj)
+        else
+            
+            return map_gen, obj, nil
+        end
+    elseif (type(obj) == "function") then
+        return obj, param, state
+    elseif (type(obj) == "string") then
+        if #obj == 0 then
+            return nil_gen, nil, nil
+        end
+        return string_gen, obj, 0
+    end
+    error(string.format('object %s of type "%s" is not iterable',
+          obj, type(obj)))
+end
+return true
+]],
+[[
+local obj = true
+if type(obj) == "table" then
+  local mt = getmetatable(obj);
+  if mt ~= nil then
+    if mt == iterator_mt then
+      return obj.gen, obj.param, obj.state
+    elseif mt.__ipairs ~= nil then
+      return mt.__ipairs(obj)
+    elseif mt.__pairs ~= nil then
+      return mt.__pairs(obj)
+    end
+  end
+  if #obj > 0 then
+      
+    return ipairs(obj)
+  else
+      
+    return map_gen, obj, nil
+  end
+elseif (type(obj) == "function") then
+  return obj, param, state
+elseif (type(obj) == "string") then
+  if #obj == 0 then
+      return nil_gen, nil, nil
+  end
+  return string_gen, obj, 0
+end
+return true
+]],
+[[
+local mt = getmetatable(obj);
+
+if mt ~= nil then
+  if mt == iterator_mt then
+    return obj.gen, obj.param, obj.state
+  elseif mt.__ipairs ~= nil then
+    return mt.__ipairs(obj)
+  elseif mt.__pairs ~= nil then
+    return mt.__pairs(obj)
+  end
+end
+
+return true
+]],
+[[
+local obj = {}
+local map_gen = true
+if #obj > 0 then
+    
+  return ipairs(obj)
+else
+    
+  return map_gen, obj, nil
+end
+]],
+[[
+local obj = true
+if type(obj) == "table" then
+  return true
+elseif (type(obj) == "function") then
+  return obj, param, state
+elseif (type(obj) == "string") then
+  if #obj == 0 then
+      return nil_gen, nil, nil
+  end
+  return string_gen, obj, 0
+end
+return true
 ]]
 }
 
-local whitelist = { 
-  [6] = false,
-  [7] = true,
-  [8] = false
- }
+local whitelist = {
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  true,
+  true,
+  true,
+  true,
+  true,
+}
 
 for no, toParse in ipairs(tests) do
-  if true then  -- whitelist[no]
+  if whitelist[no] then
     print("|=============#", "Running:", toParse)
     local parsed = parse(toParse)
     print("|=============#", "it returns:", parsed)

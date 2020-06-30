@@ -1,9 +1,15 @@
-Whitespace = pattern(function(_, strIdx, parsed)
-  return strIdx:withIndex(skipWhitespace(strIdx)), parsed
+Whitespace = pattern(function(strIdx, parsed)
+  local newIdx, advanced = skipWhitespace(strIdx)
+  
+  if advanced then
+    return strIdx:withIndex(newIdx), parsed
+  else
+    return false
+  end
 end) * "Whitespace"
 
 local function makeRxMatcher(regexPattern)
-  return pattern(function(_, strIdx, parsed)
+  return pattern(function(strIdx, parsed)
     local value = (strIdx:getValue() or ""):match(regexPattern)
     
     if value then
@@ -35,7 +41,7 @@ local keywordExports = {
 	kw_and = kw "and",
 	kw_not = kw "not",
 	kw_else = kw "else",
-  kw_goto = kw "goto",
+	kw_goto = kw "goto",
 	kw_then = kw "then",
 	kw_true = kw "true",
 	kw_while = kw "while",

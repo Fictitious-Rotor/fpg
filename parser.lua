@@ -8,7 +8,7 @@ local list = require "SinglyLinkedList"
 null = list.null
 cons = list.cons
 
-pattern, kw, keywordExports = true, true, true -- Declared here as they are referenced in the higher order patterns
+pattern, kw, keywordExports, Name, Number, Whitespace = true, true, true, true, true, true -- Declared here as they are referenced in the higher order patterns
 
 local function toChars(str)
   local out = {}
@@ -20,16 +20,24 @@ local function toChars(str)
   return out
 end
 
+function isWhitespace(value)
+  return (value == ' '
+       or value == '\r'
+       or value == '\n')
+end
+
 function skipWhitespace(strIdx)
-  local idx = strIdx:getIndex() - 1
-  local value
+  local idx = strIdx:getIndex()
+  local value = strIdx:getValue(idx)
+  local collectedWhitespace = {}
   
-  repeat
+  while isWhitespace(value) do
+    collectedWhitespace[#collectedWhitespace + 1] = value
     idx = idx + 1
     value = strIdx:getValue(idx)
-  until not (value == ' ' or value == '\r' or value == '\n')
+  end
   
-  return idx
+  return idx, idx > strIdx:getIndex()
 end
 
 -- TODO This needs to be revisited
@@ -60,17 +68,44 @@ function skipComments(strIdx)
   end
 end
 
+local function contains(tbl, val)
+  for k,v in pairs(tbl) do
+    if v == val then return k, v end
+  end
+  return false
+end
+
+local function definitionNeedsDelimiter(pat)
+  return pat == Name
+      or pat == Number
+end
+
+local function getterSetter(key)
+  return function(tbl) return tbl[key] end, 
+         function(tbl, value) tbl[key] = value return tbl end
+end
+
+local isKeyword, markAsKeyword = getterSetter("isKeyword")
+local needsWhitespace, markAsNeedsWhitespace = getterSetter("needsWhitespace")
+
+local function copyRightPatternKeywordiness(right, pat)
+  pat.trailingKeyword = right.isKeyword
+  return pat
+end
+
 local function setValue(tbl, val, idx)
   tbl[idx] = val
   return tbl
 end
+
+local parsedLogCharLimit = 35
 
 local function _logOptional(msg1, pat, msg2, strIdx, msg3, parsed)
   local stringValue = tostring(pat)
 
   if (not (stringValue == "ignore" and type(pat) == "table")) then
     if msg2 then
-      print(msg1, stringValue, msg2, strIdx, msg3, parsed and table.concat(parsed:take(35)))
+      print(msg1, stringValue, msg2, strIdx, msg3, parsed and table.concat(parsed:take(parsedLogCharLimit)))
     else
       print(msg1, pat)
     end
@@ -84,7 +119,36 @@ local function stub() end
 local _print = print
 local print = _print
 
-local logOptional = _logOptional
+local logOptional = stub --_logOptional
+
+--[========]--
+--|Lateinit|--------------------------------------------------------------------------------------------------
+--[========]--
+
+local lateinitRepo = {}
+local lateinitNames = {}
+
+-- Permit circular references using a promise stored in the 'lateinitNames' table
+function lateinit(childPatternName)
+  lateinitNames[childPatternName] = true
+  local childPattern
+  
+  return pattern(function(strIdx, parsed)
+    if not childPattern then
+      childPattern = lateinitRepo[childPatternName]
+      if not childPattern then error("Cannot load lateinit: " .. (childPatternName or "[No name]")) end
+    end
+    
+    return childPattern(strIdx, parsed)
+  end) * childPatternName
+end
+
+-- Initialise all promised references by drawing them from the provided table
+function initialiseLateInitRepo()
+  for name, _ in pairs(lateinitNames) do
+    lateinitRepo[name] = _ENV[name]
+  end
+end
 
 --[=====================]--
 --|Higher Order Patterns|-------------------------------------------------------------------------------------
@@ -92,7 +156,7 @@ local logOptional = _logOptional
 
 -- Advance pointer if contents of table matches eluChars at idx
 local function kwCompare(keyword, strIdx, parsed)
-  local pos = skipWhitespace(strIdx)
+  local pos = strIdx:getIndex()
 
   for _, c in ipairs(keyword) do
     if c ~= strIdx:getValue(pos) then
@@ -109,23 +173,41 @@ local function patternIntersection(left, right)
   if not left then error("Missing left pattern") end
   if not right then error("Missing right pattern") end
   
-  return pattern(function(_, strIdx, parsed)
+  local leftIsKeyword = isKeyword(left)
+  local enforceWhitespace = needsWhitespace(left) and needsWhitespace(right)
+  
+  if enforceWhitespace then print("Enforcing whitespace for keys of ", left, "and", right) end
+  
+  return copyRightPatternKeywordiness(right, pattern(function(strIdx, parsed)
     logOptional("About to run intersection left:", left)
     local leftStrIdx, leftParsed = left(strIdx, parsed)
     logOptional("INTERSECTION LEFT PATTERN", left, "LEFT STR IDX", leftStrIdx, "PRODUCED", leftParsed)
     
     if leftStrIdx then
-      logOptional("About to run intersection right:", right)
-      local rightStrIdx, rightParsed = right(leftStrIdx, leftParsed)
-      logOptional("INTERSECTION RIGHT PATTERN", right, "RIGHT STR IDX", rightStrIdx, "PRODUCED", rightParsed)
+      local whitespaceStrIdx, whitespaceParsed = leftStrIdx, leftParsed
       
-      if rightStrIdx then        
-        return rightStrIdx, rightParsed
+      if enforceWhitespace then
+        whitespaceStrIdx, whitespaceParsed = Whitespace(leftStrIdx, leftParsed)
+        whitespaceParsed = cons(' ', whitespaceParsed)
+      end
+      
+      if whitespaceStrIdx then
+        logOptional("About to run intersection right:", right)
+        local rightStrIdx, rightParsed = right(whitespaceStrIdx, whitespaceParsed)
+        logOptional("INTERSECTION RIGHT PATTERN", right, "RIGHT STR IDX", rightStrIdx, "PRODUCED", rightParsed)
+        
+        if rightStrIdx then        
+          return rightStrIdx, rightParsed
+        else
+          if leftIsKeyword then
+            error(string.format("Unable to parse after keyword: %s\nAt position: %s\nWith parsed of %s\n", left, leftStrIdx, leftParsed))
+          end
+        end
       end
     end
     
     return false
-  end) * ("(" .. tostring(left) .. " + " .. tostring(right) .. ")")
+  end)) * ("(" .. tostring(left) .. " + " .. tostring(right) .. ")")
 end
 
 -- Pattern OR operator
@@ -133,7 +215,7 @@ local function patternUnion(left, right)
   if not left then error("Missing left pattern") end
   if not right then error("Missing right pattern") end
   
-  return pattern(function(_, strIdx, parsed)
+  return pattern(function(strIdx, parsed)
     logOptional("Union about to run left:", left)
     local leftStrIdx, leftParsed = left(strIdx, parsed)
     logOptional("UNION LEFT PATTERN", left, "LEFT STR IDX", leftStrIdx, "PRODUCED", leftParsed)
@@ -154,7 +236,7 @@ end
 function maybe(childPattern)
   if not childPattern then error("Missing child pattern") end
   
-  return pattern(function(_, strIdx, parsed)
+  return pattern(function(strIdx, parsed)
     local childStrIdx, childParsed = childPattern(strIdx, parsed)
     
     if childStrIdx then
@@ -166,10 +248,11 @@ function maybe(childPattern)
 end 
 
 -- Pattern appears one or more times. Similar to '+' in regex
+--[[
 function many(childPattern)
   if not childPattern then error("Missing child pattern") end
   
-  return pattern(function(_, strIdx, parsed)
+  return pattern(function(strIdx, parsed)
     local function unpackReturn(packed)
       if packed then
         return packed[1], packed[2]
@@ -188,6 +271,17 @@ function many(childPattern)
     
     return unpackReturn(matchChildPattern(strIdx, parsed))
   end) * ("many(" .. tostring(childPattern) .. ")")
+end]]
+
+-- Clever, but recurses infinitely. You'll have to use lateinit for this one.
+function many(childPattern)
+	if not childPattern then error("Missing child pattern") end
+  
+  local function recurse(strIdx, parsed) 
+    return (childPattern + maybe(many(childPattern)))(strIdx, parsed)
+  end
+  
+  return pattern(recurse)
 end
 
 -- Pattern appears zero or more times. Similar to '*' in regex
@@ -200,12 +294,13 @@ end
 function checkNotKeywordThenPack(childPattern)
   if not childPattern then error("Missing child pattern") end
   
-  return pattern(function(_, strIdx, parsed)
+  return pattern(function(strIdx, parsed)
     local returnedStrIdx, returnedParsed = childPattern(strIdx, null)
     
     if not returnedStrIdx then return false end
     
     local whatChildParsed = returnedParsed:take()
+    print("checkNotKeywordThenPack: whatChildParsed:", table.concat(whatChildParsed))
     local parsedIndexer = StringIndexer.new(whatChildParsed, 1)
     
     local function loop(gen, tbl, state)
@@ -219,6 +314,7 @@ function checkNotKeywordThenPack(childPattern)
     local matchesAnyKeyword = loop(pairs(keywordExports))
         
     if matchesAnyKeyword then
+      print("checkNotKeywordThenPack: That's a keyword!")
       return false
     else
       local packed = table.concat(whatChildParsed)
@@ -234,7 +330,7 @@ end
 function packString(childPattern)
   if not childPattern then error("Missing child pattern") end
   
-  return pattern(function(_, strIdx, parsed)
+  return pattern(function(strIdx, parsed)
     local returnedStrIdx, returnedParsed = childPattern(strIdx, null)
     
     if not returnedStrIdx then return false end
@@ -249,41 +345,13 @@ end
 function notPattern(childPattern)
   if not childPattern then error("Missing child pattern") end
   
-  return pattern(function(_, strIdx, parsed)
+  return pattern(function(strIdx, parsed)
     local value = strIdx:getValue()
   
     return value
        and not childPattern(strIdx, parsed)
        and strIdx:withFollowingIndex(), cons(value, parsed)
   end) * ("notPattern(" .. tostring(childPattern) .. ")")
-end
-
-
------- Lateinit
-
-local lateinitRepo = {}
-local lateinitNames = {}
-
--- Permit circular references using a promise stored in the 'lateinitNames' table
-function lateinit(childPatternName)
-  lateinitNames[childPatternName] = true
-  local childPattern
-  
-  return pattern(function(_, strIdx, parsed)
-    if not childPattern then
-      childPattern = lateinitRepo[childPatternName]
-      if not childPattern then error("Cannot load lateinit: " .. (childPatternName or "[No name]")) end
-    end
-    
-    return childPattern(strIdx, parsed)
-  end) * childPatternName
-end
-
--- Initialise all promised references by drawing them from the provided table
-function initialiseLateInitRepo()
-  for name, _ in pairs(lateinitNames) do
-    lateinitRepo[name] = _ENV[name]
-  end
 end
 
 --[==========]--
@@ -298,10 +366,12 @@ end
 
 pattern = function(fn)
   return setmetatable({}, { 
-    __call = fn, 
+    __call = function(_, strIdx, parsed)
+               return fn(strIdx, parsed)
+             end,
     __add = patternIntersection, 
     __div = patternUnion, 
-    __mul = attachLabel 
+    __mul = attachLabel
   })
 end
 
@@ -313,8 +383,10 @@ end
 
 sym = function(matchStr, tostringStr)
   local tostringStr = tostringStr or matchStr
+  local charTable = toChars(matchStr)
+  charTable.isKeyword = true -- excluded from kwCompare as it only checks the array
   
-  return setmetatable(toChars(matchStr), { 
+  return setmetatable(markAsNeedsWhitespace(charTable), { 
     __call = kwCompare, 
     __add = patternIntersection, 
     __div = patternUnion,

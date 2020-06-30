@@ -26,3 +26,13 @@ Add NaN keyword. Add it to Number.
 
 
 Strings don't parse properly at the moment. It seems as though whitespace is being cropped out, which you can see in the tests. Investigate further.
+
+
+For the whitespace problem:
+try and make it so that everything is surrounded by a 'Whitespace' token.
+The whitespace token can be of length 0 (yes we're back to that again)
+Then add a new standard tag 'needsWhitespace' to patterns. Make it so that constructing higher order patterns copies the value from the right-most child (should be fairly easy)
+This means that you can compare the higher order patterns to whatever value is on the right. Assuming that both of them need whitespace then we enforce whitespace and error if it fails.
+...
+I'm not sure if I actually want tokens though. I think they'd probably get in the way. Without them, I can have a left and a right and make a decision like that.
+If I introduce the Whitespace token into this then I'll now have three tokens to deal with.
