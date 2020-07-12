@@ -7,38 +7,37 @@ unop =(kw_minus
      * "unop"
 --
 binop =(kw_plus
-      / kw_minus * "ignore"
-      / kw_times * "ignore"
-      / kw_divide * "ignore"
-      / kw_caret * "ignore"
-      / kw_modulo * "ignore"
-      / kw_concat * "ignore"
-      / kw_lt * "ignore"
-      / kw_lte * "ignore"
-      / kw_gt * "ignore"
-      / kw_gte * "ignore"
+      / kw_minus     * "ignore"
+      / kw_times     * "ignore"
+      / kw_divide    * "ignore"
+      / kw_caret     * "ignore"
+      / kw_modulo    * "ignore"
+      / kw_concat    * "ignore"
+      / kw_lt        * "ignore"
+      / kw_lte       * "ignore"
+      / kw_gt        * "ignore"
+      / kw_gte       * "ignore"
       / kw_are_equal * "ignore"
       / kw_not_equal * "ignore"
-      / kw_and * "ignore"
-      / kw_or * "ignore")
+      / kw_and       * "ignore"
+      / kw_or        * "ignore")
       * "binop"
 --
 fieldsep =(kw_comma
          / kw_semicolon)
          * "fieldsep"
 --
--- Presently I have maybe(Whitespace) in front of these to make them run. They should, however, be phased out once implementation of markAsNeedsWhitespace is completed.
-Name =(markAsNeedsWhitespace(checkNotKeywordThenPack(maybe(Whitespace) + Alphabetic + maybemany(Alphanumeric))))
+Name =(setNeedsWhitespace(checkNotKeywordThenPack(Alphabetic + maybemany(Alphanumeric)), true))
      * "Name"
 -- Introduce support for [===[ [==[ [=[ [[]] ]=] ]==] ]===]
-String =(packString(maybe(Whitespace) + 
-                     (kw_speech_mark + maybemany((kw_backslash + kw_speech_mark) * "ignore" / notPattern(kw_speech_mark) * "ignore") * "ignore" + kw_speech_mark) * 'String ""'
+String =(packString((kw_speech_mark + maybemany((kw_backslash + kw_speech_mark) * "ignore" / notPattern(kw_speech_mark) * "ignore") * "ignore" + kw_speech_mark) * 'String ""'
                      / (kw_quote + maybemany((kw_backslash + kw_quote) * "ignore" / notPattern(kw_quote) * "ignore") * "ignore" + kw_quote) * "String ''"
                      / (kw_multiline_open + maybemany(notPattern(kw_multiline_close) * "ignore") * "ignore" + kw_multiline_close) * "String [[]]"))
        * "String"
 --
 
-Number =(markAsNeedsWhitespace(packString(maybe(Whitespace) + many(Digit) + maybe(kw_dot + many(Digit)))))
+-- There's a hole in the logic here - you can sneak whitespace after the dot if you want.
+Number =(setNeedsWhitespace(packString(many(Digit) + maybe(kw_dot + many(Digit))), true))
        * "Number"
 --
 namelist =(Name + maybemany(kw_comma + Name))
@@ -109,7 +108,7 @@ var =(Name + maybemany(var_right_recur))
     * "var"
 --
 
--- Functioncall
+-- Functioncalls
 functioncall_right_recur =((var_suffix + lateinit("functioncall_right_recur")) / (functioncall_suffix + maybe(lateinit("functioncall_right_recur"))))
                          * "functioncall_right_recur"
 --
@@ -216,4 +215,4 @@ initialiseLateInitRepo()
 -- New syntax to introduce could use this?
 -- lambdabody =(maybe(maybe(stat + maybe(kw_semicolon)) + returnWrapper(expr)))
 
-return block -- Entrypoint
+return maybemany(Whitespace) + block + maybemany(Whitespace) -- Entrypoint

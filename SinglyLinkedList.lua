@@ -56,6 +56,7 @@ end
 
 
 function List.__tostring(instance)
+  if instance == List.null then return "null" end
   return table.concat(instance:take())
 end
 

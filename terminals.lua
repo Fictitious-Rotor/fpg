@@ -1,15 +1,5 @@
-Whitespace = pattern(function(strIdx, parsed)
-  local newIdx, advanced = skipWhitespace(strIdx)
-  
-  if advanced then
-    return strIdx:withIndex(newIdx), parsed
-  else
-    return false
-  end
-end) * "Whitespace"
-
 local function makeRxMatcher(regexPattern)
-  return pattern(function(strIdx, parsed)
+  return patternNoWhitespace(function(strIdx, parsed)
     local value = (strIdx:getValue() or ""):match(regexPattern)
     
     if value then
@@ -19,6 +9,9 @@ local function makeRxMatcher(regexPattern)
     end
   end)
 end
+
+Whitespace = makeRxMatcher("%s")
+           * "Whitespace"
 
 Alphabetic = makeRxMatcher("[%a_]")
            * "Alphabetic"

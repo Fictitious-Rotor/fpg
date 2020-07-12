@@ -8,7 +8,8 @@ local list = require "SinglyLinkedList"
 null = list.null
 cons = list.cons
 
-pattern, kw, keywordExports, Name, Number, Whitespace = true, true, true, true, true, true -- Declared here as they are referenced in the higher order patterns
+pattern, patternNoWhitespace, kw, keywordExports, Name, Number, Whitespace, Alphanumeric = true, true, true, true, true, true, true, true
+ -- Declared here as they are referenced in the higher order patterns
 
 local function toChars(str)
   local out = {}
@@ -20,83 +21,13 @@ local function toChars(str)
   return out
 end
 
-function isWhitespace(value)
-  return (value == ' '
-       or value == '\r'
-       or value == '\n')
-end
-
-function skipWhitespace(strIdx)
-  local idx = strIdx:getIndex()
-  local value = strIdx:getValue(idx)
-  local collectedWhitespace = {}
-  
-  while isWhitespace(value) do
-    collectedWhitespace[#collectedWhitespace + 1] = value
-    idx = idx + 1
-    value = strIdx:getValue(idx)
-  end
-  
-  return idx, idx > strIdx:getIndex()
-end
-
--- TODO This needs to be revisited
-function skipComments(strIdx)
-  local idx = strIndex:getIdx()
-
-  if  (strIdx:getValue(idx) == '-') 
-  and (strIdx:getValue(idx + 1) == '-') 
-  then
-    local multiline = strIdx:getValue(idx + 2) == '[' 
-                  and strIdx:getValue(idx + 3) == '['
-    idx = idx + (multiline and 4 or 2)
-    
-    if multiline then
-      repeat
-        idx = idx + 1
-      until (strIdx:getValue(idx) == ']' 
-        and  strIdx:getValue(idx - 1) == ']')
-    else
-      while not (strIdx:getValue(idx) == '\n') do
-        idx = idx + 1
-      end
-    end
-    
-    return idx + 1
-  else
-    return idx
-  end
-end
-
-local function contains(tbl, val)
-  for k,v in pairs(tbl) do
-    if v == val then return k, v end
-  end
-  return false
-end
-
-local function definitionNeedsDelimiter(pat)
-  return pat == Name
-      or pat == Number
-end
-
 local function getterSetter(key)
   return function(tbl) return tbl[key] end, 
          function(tbl, value) tbl[key] = value return tbl end
 end
 
-local isKeyword, markAsKeyword = getterSetter("isKeyword")
-local needsWhitespace, markAsNeedsWhitespace = getterSetter("needsWhitespace")
-
-local function copyRightPatternKeywordiness(right, pat)
-  pat.trailingKeyword = right.isKeyword
-  return pat
-end
-
-local function setValue(tbl, val, idx)
-  tbl[idx] = val
-  return tbl
-end
+local getRefuseBacktrack, setRefuseBacktrack = getterSetter("refuseBacktrack")
+getNeedsWhitespace, setNeedsWhitespace = getterSetter("needsWhitespace")
 
 local parsedLogCharLimit = 35
 
@@ -119,7 +50,7 @@ local function stub() end
 local _print = print
 local print = _print
 
-local logOptional = stub --_logOptional
+local logOptional = _logOptional
 
 --[========]--
 --|Lateinit|--------------------------------------------------------------------------------------------------
@@ -136,7 +67,7 @@ function lateinit(childPatternName)
   return pattern(function(strIdx, parsed)
     if not childPattern then
       childPattern = lateinitRepo[childPatternName]
-      if not childPattern then error("Cannot load lateinit: " .. (childPatternName or "[No name]")) end
+      if not childPattern then error(string.format("Cannot load lateinit: %s", (childPatternName or "[No name]"))) end
     end
     
     return childPattern(strIdx, parsed)
@@ -154,64 +85,105 @@ end
 --|Higher Order Patterns|-------------------------------------------------------------------------------------
 --[=====================]--
 
--- Advance pointer if contents of table matches eluChars at idx
-local function kwCompare(keyword, strIdx, parsed)
+local function symCompare(symbol, strIdx, parsed)
   local pos = strIdx:getIndex()
 
-  for _, c in ipairs(keyword) do
+  for _, c in ipairs(symbol) do
     if c ~= strIdx:getValue(pos) then
       return false
     end
     pos = pos + 1
   end
   
-  return strIdx:withIndex(pos), cons(tostring(keyword), parsed)
+  return strIdx:withIndex(pos), cons(tostring(symbol), parsed)
 end
 
--- Pattern AND operator
-local function patternIntersection(left, right)
+-- Advance pointer if contents of table matches eluChars at idx
+local function kwCompare(keyword, strIdx, parsed)
+  local symStrIdx, symParsed = symCompare(keyword, strIdx, parsed)
+  
+  if not symStrIdx then return false end
+  
+  -- Ensure that the keyword has now stopped.
+  if Alphanumeric(symStrIdx, null) then 
+    print("IDENTIFIED BAD KEYWORD:", keyword, "AT STRIDX:", symStrIdx, "WITH PARSED", symParsed) 
+    return false
+  end
+  
+  return symStrIdx, symParsed
+end
+
+local function concatenationNoWhitespace(left, right)
   if not left then error("Missing left pattern") end
   if not right then error("Missing right pattern") end
   
-  local leftIsKeyword = isKeyword(left)
-  local enforceWhitespace = needsWhitespace(left) and needsWhitespace(right)
-  
-  if enforceWhitespace then print("Enforcing whitespace for keys of ", left, "and", right) end
-  
-  return copyRightPatternKeywordiness(right, pattern(function(strIdx, parsed)
-    logOptional("About to run intersection left:", left)
+  return patternNoWhitespace(function(strIdx, parsed)
+    logOptional("About to run intersection left:", left, "with strIdx of:", strIdx, "and parsed of:", parsed)
     local leftStrIdx, leftParsed = left(strIdx, parsed)
     logOptional("INTERSECTION LEFT PATTERN", left, "LEFT STR IDX", leftStrIdx, "PRODUCED", leftParsed)
     
     if leftStrIdx then
-      local whitespaceStrIdx, whitespaceParsed = leftStrIdx, leftParsed
+      logOptional("About to run intersection right:", right)
+      local rightStrIdx, rightParsed = right(leftStrIdx, leftParsed)
+      logOptional("INTERSECTION RIGHT PATTERN", right, "RIGHT STR IDX", rightStrIdx, "PRODUCED", rightParsed)
       
-      if enforceWhitespace then
-        whitespaceStrIdx, whitespaceParsed = Whitespace(leftStrIdx, leftParsed)
-        whitespaceParsed = cons(' ', whitespaceParsed)
-      end
-      
-      if whitespaceStrIdx then
-        logOptional("About to run intersection right:", right)
-        local rightStrIdx, rightParsed = right(whitespaceStrIdx, whitespaceParsed)
-        logOptional("INTERSECTION RIGHT PATTERN", right, "RIGHT STR IDX", rightStrIdx, "PRODUCED", rightParsed)
-        
-        if rightStrIdx then        
-          return rightStrIdx, rightParsed
-        else
-          if leftIsKeyword then
-            error(string.format("Unable to parse after keyword: %s\nAt position: %s\nWith parsed of %s\n", left, leftStrIdx, leftParsed))
-          end
-        end
+      if rightStrIdx then        
+        return rightStrIdx, rightParsed
       end
     end
     
     return false
-  end)) * ("(" .. tostring(left) .. " + " .. tostring(right) .. ")")
+  end) * ("(" .. tostring(left) .. " + " .. tostring(right) .. ")")
+end
+
+-- Pattern AND operator
+-- This one's getting a bit stout and is beginning to smell. Review this once you get it working.
+local function patternConcatenation(left, right)
+  if not left then error("Missing left pattern") end
+  if not right then error("Missing right pattern") end
+  
+  local leftRefusesBacktrack = getRefuseBacktrack(left)
+  local enforceWhitespace = getNeedsWhitespace(left) and getNeedsWhitespace(right)
+  
+  if enforceWhitespace then print("Enforcing whitespace for keys of ", left, "and", right) end
+  
+  local concatenatedPattern = pattern(function(strIdx, parsed)
+    logOptional("About to run intersection left:", left, "with strIdx of:", strIdx, "and parsed of:", parsed)
+    local leftStrIdx, leftParsed = left(strIdx, parsed)
+    logOptional("INTERSECTION LEFT PATTERN", left, "LEFT STR IDX", leftStrIdx, "PRODUCED", leftParsed)
+    
+    if leftStrIdx then
+      logOptional("About to run whitespace:")
+      local whitespaceStrIdx, whitespaceParsed = many(Whitespace)(leftStrIdx, leftParsed)
+      logOptional("INTERSECTION WHITESPACE STR IDX", whitespaceStrIdx, "PRODUCED", whitespaceParsed)
+      
+      if not whitespaceStrIdx then
+        if enforceWhitespace then
+          error(string.format("Missing whitespace between patterns '%s' and '%s':\n\tAt position: %s\n\tWith parsed of %s\n", left, leftStrIdx, leftParsed))
+        else
+          whitespaceStrIdx, whitespaceParsed = leftStrIdx, leftParsed
+        end
+      end
+      
+      logOptional("About to run intersection right:", right)
+      local rightStrIdx, rightParsed = right(whitespaceStrIdx, whitespaceParsed)
+      logOptional("INTERSECTION RIGHT PATTERN", right, "RIGHT STR IDX", rightStrIdx, "PRODUCED", rightParsed)
+      
+      if not rightStrIdx and leftRefusesBacktrack then -- A hanging keyword is invalid syntax. Time to crash out.
+        error(string.format("Unable to parse after keyword: %s\nAt position: %s\nWith parsed of %s\n", left, leftStrIdx, leftParsed))
+      end
+      
+      return rightStrIdx, rightParsed
+    end
+    
+    return false
+  end) * ("(" .. tostring(left) .. " + " .. tostring(right) .. ")")
+  
+  return setRefuseBacktrack(concatenatedPattern, getRefuseBacktrack(right))
 end
 
 -- Pattern OR operator
-local function patternUnion(left, right)
+local function patternAlternation(left, right)
   if not left then error("Missing left pattern") end
   if not right then error("Missing right pattern") end
   
@@ -237,6 +209,7 @@ function maybe(childPattern)
   if not childPattern then error("Missing child pattern") end
   
   return pattern(function(strIdx, parsed)
+    print("Executing maybe:", childPattern, strIdx, parsed)
     local childStrIdx, childParsed = childPattern(strIdx, parsed)
     
     if childStrIdx then
@@ -245,42 +218,16 @@ function maybe(childPattern)
       return strIdx, parsed
     end
   end) * ("maybe(" .. tostring(childPattern) .. ")")
-end 
+end
 
 -- Pattern appears one or more times. Similar to '+' in regex
---[[
-function many(childPattern)
-  if not childPattern then error("Missing child pattern") end
-  
-  return pattern(function(strIdx, parsed)
-    local function unpackReturn(packed)
-      if packed then
-        return packed[1], packed[2]
-      else
-        return false
-      end
-    end
-  
-    local function matchChildPattern(strIdx, parsed)
-      local childStrIdx, childParsed = childPattern(strIdx, parsed)
-      
-      return childStrIdx
-         and (matchChildPattern(childStrIdx, childParsed)
-              or { childStrIdx, childParsed })
-    end
-    
-    return unpackReturn(matchChildPattern(strIdx, parsed))
-  end) * ("many(" .. tostring(childPattern) .. ")")
-end]]
-
 function many(childPattern)
 	if not childPattern then error("Missing child pattern") end
   
-  local function recurse(strIdx, parsed) 
+  return pattern(function(strIdx, parsed)
+    print("Executing many:", childPattern, strIdx, parsed)
     return (childPattern + maybe(many(childPattern)))(strIdx, parsed)
-  end
-  
-  return pattern(recurse)
+  end)
 end
 
 -- Pattern appears zero or more times. Similar to '*' in regex
@@ -323,6 +270,7 @@ function checkNotKeywordThenPack(childPattern)
   end) * ("checkNotKeywordThenPack(" .. tostring(childPattern) .. ")")
 end
 
+-- MANAGEMENT OF WHITESPACE HAS BEEN IMPROVED SO THAT THIS IS NO LONGER THE CASE. PACKING WILL STILL BE USEFUL FOR MACROS, THOUGH. UPDATE THE COMMENTS.
 -- All syntax is delimited with spaces in the output.
 -- A string put through this would come out as " e n d ".
 -- This function packs the child patterns into a single string, which is delimited correctly.
@@ -368,29 +316,44 @@ pattern = function(fn)
     __call = function(_, strIdx, parsed)
                return fn(strIdx, parsed)
              end,
-    __add = patternIntersection, 
-    __div = patternUnion, 
+    __add = patternConcatenation, 
+    __div = patternAlternation, 
+    __mul = attachLabel
+  })
+end
+
+patternNoWhitespace = function(fn)
+  return setmetatable({}, {
+    __call = function(tbl, strIdx, parsed)
+               return fn(strIdx, parsed)
+             end,
+    __add = concatenationNoWhitespace,
+    __div = patternAlternation,
     __mul = attachLabel
   })
 end
 
 kw = function(str)
-  local spacedStr = " " .. str .. " "
+  local charTable = setNeedsWhitespace(setRefuseBacktrack(toChars(str), true), true)
   
-  return sym(str, spacedStr)
+  return setmetatable(charTable, {
+    __call = kwCompare,
+    __add = patternConcatenation, 
+    __div = patternAlternation,
+    __len = function() return #str end,
+    __tostring = function() return str end
+  })
 end
 
-sym = function(matchStr, tostringStr)
-  local tostringStr = tostringStr or matchStr
-  local charTable = toChars(matchStr)
-  charTable.isKeyword = true -- excluded from kwCompare as it only checks the array
+sym = function(str)
+  local charTable = setRefuseBacktrack(toChars(str), true)
   
-  return setmetatable(markAsNeedsWhitespace(charTable), { 
-    __call = kwCompare, 
-    __add = patternIntersection, 
-    __div = patternUnion,
-    __len = function() return #matchStr end,
-    __tostring = function() return tostringStr end
+  return setmetatable(charTable, {
+    __call = symCompare,
+    __add = patternConcatenation, 
+    __div = patternAlternation,
+    __len = function() return #str end,
+    __tostring = function() return str end
   })
 end
 
