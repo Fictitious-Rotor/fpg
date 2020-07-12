@@ -8,7 +8,8 @@ local list = require "SinglyLinkedList"
 null = list.null
 cons = list.cons
 
-pattern, kw, keywordExports = true, true, true -- Declared here as they are referenced in the higher order patterns
+pattern, patternNoWhitespace, kw, keywordExports, Name, Number, Whitespace, Alphanumeric = true, true, true, true, true, true, true, true
+ -- Declared here as they are referenced in the higher order patterns
 
 local function toChars(str)
   local out = {}
@@ -20,57 +21,22 @@ local function toChars(str)
   return out
 end
 
-function skipWhitespace(strIdx)
-  local idx = strIdx:getIndex() - 1
-  local value
-  
-  repeat
-    idx = idx + 1
-    value = strIdx:getValue(idx)
-  until not (value == ' ' or value == '\r' or value == '\n')
-  
-  return idx
+local function getterSetter(key)
+  return function(tbl) return tbl[key] end, 
+         function(tbl, value) tbl[key] = value return tbl end
 end
 
--- TODO This needs to be revisited
-function skipComments(strIdx)
-  local idx = strIndex:getIdx()
+local getRefuseBacktrack, setRefuseBacktrack = getterSetter("refuseBacktrack")
+getNeedsWhitespace, setNeedsWhitespace = getterSetter("needsWhitespace")
 
-  if  (strIdx:getValue(idx) == '-') 
-  and (strIdx:getValue(idx + 1) == '-') 
-  then
-    local multiline = strIdx:getValue(idx + 2) == '[' 
-                  and strIdx:getValue(idx + 3) == '['
-    idx = idx + (multiline and 4 or 2)
-    
-    if multiline then
-      repeat
-        idx = idx + 1
-      until (strIdx:getValue(idx) == ']' 
-        and  strIdx:getValue(idx - 1) == ']')
-    else
-      while not (strIdx:getValue(idx) == '\n') do
-        idx = idx + 1
-      end
-    end
-    
-    return idx + 1
-  else
-    return idx
-  end
-end
-
-local function setValue(tbl, val, idx)
-  tbl[idx] = val
-  return tbl
-end
+local parsedLogCharLimit = 35
 
 local function _logOptional(msg1, pat, msg2, strIdx, msg3, parsed)
   local stringValue = tostring(pat)
 
   if (not (stringValue == "ignore" and type(pat) == "table")) then
     if msg2 then
-      print(msg1, stringValue, msg2, strIdx, msg3, parsed and table.concat(parsed:take(35)))
+      print(msg1, stringValue, msg2, strIdx, msg3, parsed and table.concat(parsed:take(parsedLogCharLimit)))
     else
       print(msg1, pat)
     end
@@ -86,31 +52,73 @@ local print = _print
 
 local logOptional = _logOptional
 
+--[========]--
+--|Lateinit|--------------------------------------------------------------------------------------------------
+--[========]--
+
+local lateinitRepo = {}
+local lateinitNames = {}
+
+-- Permit circular references using a promise stored in the 'lateinitNames' table
+function lateinit(childPatternName)
+  lateinitNames[childPatternName] = true
+  local childPattern
+  
+  return pattern(function(strIdx, parsed)
+    if not childPattern then
+      childPattern = lateinitRepo[childPatternName]
+      if not childPattern then error(string.format("Cannot load lateinit: %s", (childPatternName or "[No name]"))) end
+    end
+    
+    return childPattern(strIdx, parsed)
+  end) * childPatternName
+end
+
+-- Initialise all promised references by drawing them from the provided table
+function initialiseLateInitRepo()
+  for name, _ in pairs(lateinitNames) do
+    lateinitRepo[name] = _ENV[name]
+  end
+end
+
 --[=====================]--
 --|Higher Order Patterns|-------------------------------------------------------------------------------------
 --[=====================]--
 
--- Advance pointer if contents of table matches eluChars at idx
-local function kwCompare(keyword, strIdx, parsed)
-  local pos = skipWhitespace(strIdx)
+local function symCompare(symbol, strIdx, parsed)
+  local pos = strIdx:getIndex()
 
-  for _, c in ipairs(keyword) do
+  for _, c in ipairs(symbol) do
     if c ~= strIdx:getValue(pos) then
       return false
     end
     pos = pos + 1
   end
   
-  return strIdx:withIndex(pos), cons(tostring(keyword), parsed)
+  return strIdx:withIndex(pos), cons(tostring(symbol), parsed)
 end
 
--- Pattern AND operator
-local function patternIntersection(left, right)
+-- Advance pointer if contents of table matches eluChars at idx
+local function kwCompare(keyword, strIdx, parsed)
+  local symStrIdx, symParsed = symCompare(keyword, strIdx, parsed)
+  
+  if not symStrIdx then return false end
+  
+  -- Ensure that the keyword has now stopped.
+  if Alphanumeric(symStrIdx, null) then 
+    print("IDENTIFIED BAD KEYWORD:", keyword, "AT STRIDX:", symStrIdx, "WITH PARSED", symParsed) 
+    return false
+  end
+  
+  return symStrIdx, symParsed
+end
+
+local function concatenationNoWhitespace(left, right)
   if not left then error("Missing left pattern") end
   if not right then error("Missing right pattern") end
   
-  return pattern(function(_, strIdx, parsed)
-    logOptional("About to run intersection left:", left)
+  return patternNoWhitespace(function(strIdx, parsed)
+    logOptional("About to run intersection left:", left, "with strIdx of:", strIdx, "and parsed of:", parsed)
     local leftStrIdx, leftParsed = left(strIdx, parsed)
     logOptional("INTERSECTION LEFT PATTERN", left, "LEFT STR IDX", leftStrIdx, "PRODUCED", leftParsed)
     
@@ -128,12 +136,58 @@ local function patternIntersection(left, right)
   end) * ("(" .. tostring(left) .. " + " .. tostring(right) .. ")")
 end
 
--- Pattern OR operator
-local function patternUnion(left, right)
+-- Pattern AND operator
+-- This one's getting a bit stout and is beginning to smell. Review this once you get it working.
+local function patternConcatenation(left, right)
   if not left then error("Missing left pattern") end
   if not right then error("Missing right pattern") end
   
-  return pattern(function(_, strIdx, parsed)
+  local leftRefusesBacktrack = getRefuseBacktrack(left)
+  local enforceWhitespace = getNeedsWhitespace(left) and getNeedsWhitespace(right)
+  
+  if enforceWhitespace then print("Enforcing whitespace for keys of ", left, "and", right) end
+  
+  local concatenatedPattern = pattern(function(strIdx, parsed)
+    logOptional("About to run intersection left:", left, "with strIdx of:", strIdx, "and parsed of:", parsed)
+    local leftStrIdx, leftParsed = left(strIdx, parsed)
+    logOptional("INTERSECTION LEFT PATTERN", left, "LEFT STR IDX", leftStrIdx, "PRODUCED", leftParsed)
+    
+    if leftStrIdx then
+      logOptional("About to run whitespace:")
+      local whitespaceStrIdx, whitespaceParsed = many(Whitespace)(leftStrIdx, leftParsed)
+      logOptional("INTERSECTION WHITESPACE STR IDX", whitespaceStrIdx, "PRODUCED", whitespaceParsed)
+      
+      if not whitespaceStrIdx then
+        if enforceWhitespace then
+          error(string.format("Missing whitespace between patterns '%s' and '%s':\n\tAt position: %s\n\tWith parsed of %s\n", left, leftStrIdx, leftParsed))
+        else
+          whitespaceStrIdx, whitespaceParsed = leftStrIdx, leftParsed
+        end
+      end
+      
+      logOptional("About to run intersection right:", right)
+      local rightStrIdx, rightParsed = right(whitespaceStrIdx, whitespaceParsed)
+      logOptional("INTERSECTION RIGHT PATTERN", right, "RIGHT STR IDX", rightStrIdx, "PRODUCED", rightParsed)
+      
+      if not rightStrIdx and leftRefusesBacktrack then -- A hanging keyword is invalid syntax. Time to crash out.
+        error(string.format("Unable to parse after keyword: %s\nAt position: %s\nWith parsed of %s\n", left, leftStrIdx, leftParsed))
+      end
+      
+      return rightStrIdx, rightParsed
+    end
+    
+    return false
+  end) * ("(" .. tostring(left) .. " + " .. tostring(right) .. ")")
+  
+  return setRefuseBacktrack(concatenatedPattern, getRefuseBacktrack(right))
+end
+
+-- Pattern OR operator
+local function patternAlternation(left, right)
+  if not left then error("Missing left pattern") end
+  if not right then error("Missing right pattern") end
+  
+  return pattern(function(strIdx, parsed)
     logOptional("Union about to run left:", left)
     local leftStrIdx, leftParsed = left(strIdx, parsed)
     logOptional("UNION LEFT PATTERN", left, "LEFT STR IDX", leftStrIdx, "PRODUCED", leftParsed)
@@ -154,7 +208,8 @@ end
 function maybe(childPattern)
   if not childPattern then error("Missing child pattern") end
   
-  return pattern(function(_, strIdx, parsed)
+  return pattern(function(strIdx, parsed)
+    print("Executing maybe:", childPattern, strIdx, parsed)
     local childStrIdx, childParsed = childPattern(strIdx, parsed)
     
     if childStrIdx then
@@ -163,31 +218,16 @@ function maybe(childPattern)
       return strIdx, parsed
     end
   end) * ("maybe(" .. tostring(childPattern) .. ")")
-end 
+end
 
 -- Pattern appears one or more times. Similar to '+' in regex
 function many(childPattern)
-  if not childPattern then error("Missing child pattern") end
+	if not childPattern then error("Missing child pattern") end
   
-  return pattern(function(_, strIdx, parsed)
-    local function unpackReturn(packed)
-      if packed then
-        return packed[1], packed[2]
-      else
-        return false
-      end
-    end
-  
-    local function matchChildPattern(strIdx, parsed)
-      local childStrIdx, childParsed = childPattern(strIdx, parsed)
-      
-      return childStrIdx
-         and (matchChildPattern(childStrIdx, childParsed)
-              or { childStrIdx, childParsed })
-    end
-    
-    return unpackReturn(matchChildPattern(strIdx, parsed))
-  end) * ("many(" .. tostring(childPattern) .. ")")
+  return pattern(function(strIdx, parsed)
+    print("Executing many:", childPattern, strIdx, parsed)
+    return (childPattern + maybe(many(childPattern)))(strIdx, parsed)
+  end)
 end
 
 -- Pattern appears zero or more times. Similar to '*' in regex
@@ -200,12 +240,13 @@ end
 function checkNotKeywordThenPack(childPattern)
   if not childPattern then error("Missing child pattern") end
   
-  return pattern(function(_, strIdx, parsed)
+  return pattern(function(strIdx, parsed)
     local returnedStrIdx, returnedParsed = childPattern(strIdx, null)
     
     if not returnedStrIdx then return false end
     
     local whatChildParsed = returnedParsed:take()
+    print("checkNotKeywordThenPack: whatChildParsed:", table.concat(whatChildParsed))
     local parsedIndexer = StringIndexer.new(whatChildParsed, 1)
     
     local function loop(gen, tbl, state)
@@ -219,6 +260,7 @@ function checkNotKeywordThenPack(childPattern)
     local matchesAnyKeyword = loop(pairs(keywordExports))
         
     if matchesAnyKeyword then
+      print("checkNotKeywordThenPack: That's a keyword!")
       return false
     else
       local packed = table.concat(whatChildParsed)
@@ -228,13 +270,14 @@ function checkNotKeywordThenPack(childPattern)
   end) * ("checkNotKeywordThenPack(" .. tostring(childPattern) .. ")")
 end
 
+-- MANAGEMENT OF WHITESPACE HAS BEEN IMPROVED SO THAT THIS IS NO LONGER THE CASE. PACKING WILL STILL BE USEFUL FOR MACROS, THOUGH. UPDATE THE COMMENTS.
 -- All syntax is delimited with spaces in the output.
 -- A string put through this would come out as " e n d ".
 -- This function packs the child patterns into a single string, which is delimited correctly.
 function packString(childPattern)
   if not childPattern then error("Missing child pattern") end
   
-  return pattern(function(_, strIdx, parsed)
+  return pattern(function(strIdx, parsed)
     local returnedStrIdx, returnedParsed = childPattern(strIdx, null)
     
     if not returnedStrIdx then return false end
@@ -249,41 +292,13 @@ end
 function notPattern(childPattern)
   if not childPattern then error("Missing child pattern") end
   
-  return pattern(function(_, strIdx, parsed)
+  return pattern(function(strIdx, parsed)
     local value = strIdx:getValue()
   
     return value
        and not childPattern(strIdx, parsed)
        and strIdx:withFollowingIndex(), cons(value, parsed)
   end) * ("notPattern(" .. tostring(childPattern) .. ")")
-end
-
-
------- Lateinit
-
-local lateinitRepo = {}
-local lateinitNames = {}
-
--- Permit circular references using a promise stored in the 'lateinitNames' table
-function lateinit(childPatternName)
-  lateinitNames[childPatternName] = true
-  local childPattern
-  
-  return pattern(function(_, strIdx, parsed)
-    if not childPattern then
-      childPattern = lateinitRepo[childPatternName]
-      if not childPattern then error("Cannot load lateinit: " .. (childPatternName or "[No name]")) end
-    end
-    
-    return childPattern(strIdx, parsed)
-  end) * childPatternName
-end
-
--- Initialise all promised references by drawing them from the provided table
-function initialiseLateInitRepo()
-  for name, _ in pairs(lateinitNames) do
-    lateinitRepo[name] = _ENV[name]
-  end
 end
 
 --[==========]--
@@ -298,28 +313,47 @@ end
 
 pattern = function(fn)
   return setmetatable({}, { 
-    __call = fn, 
-    __add = patternIntersection, 
-    __div = patternUnion, 
-    __mul = attachLabel 
+    __call = function(_, strIdx, parsed)
+               return fn(strIdx, parsed)
+             end,
+    __add = patternConcatenation, 
+    __div = patternAlternation, 
+    __mul = attachLabel
+  })
+end
+
+patternNoWhitespace = function(fn)
+  return setmetatable({}, {
+    __call = function(tbl, strIdx, parsed)
+               return fn(strIdx, parsed)
+             end,
+    __add = concatenationNoWhitespace,
+    __div = patternAlternation,
+    __mul = attachLabel
   })
 end
 
 kw = function(str)
-  local spacedStr = " " .. str .. " "
+  local charTable = setNeedsWhitespace(setRefuseBacktrack(toChars(str), true), true)
   
-  return sym(str, spacedStr)
+  return setmetatable(charTable, {
+    __call = kwCompare,
+    __add = patternConcatenation, 
+    __div = patternAlternation,
+    __len = function() return #str end,
+    __tostring = function() return str end
+  })
 end
 
-sym = function(matchStr, tostringStr)
-  local tostringStr = tostringStr or matchStr
+sym = function(str)
+  local charTable = setRefuseBacktrack(toChars(str), true)
   
-  return setmetatable(toChars(matchStr), { 
-    __call = kwCompare, 
-    __add = patternIntersection, 
-    __div = patternUnion,
-    __len = function() return #matchStr end,
-    __tostring = function() return tostringStr end
+  return setmetatable(charTable, {
+    __call = symCompare,
+    __add = patternConcatenation, 
+    __div = patternAlternation,
+    __len = function() return #str end,
+    __tostring = function() return str end
   })
 end
 
