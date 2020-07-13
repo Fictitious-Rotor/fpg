@@ -43,8 +43,10 @@ Number =(setNeedsWhitespace(packString(many(Digit) + maybe(kw_dot + many(Digit))
 namelist =(Name + maybemany(kw_comma + Name))
          * "namelist"
 --
-parlist =((namelist + maybe(kw_comma + kw_ellipsis))
-        / kw_ellipsis)
+parlist_right_recur =(kw_comma + ((Name + maybe(lateinit("parlist_right_recur"))) / kw_ellipsis))
+--
+parlist =(kw_ellipsis
+        / Name + maybe(parlist_right_recur))
         * "parlist"
 --
 funcbody =(kw_paren_open + maybe(parlist) + kw_paren_close + block + kw_end)
@@ -194,6 +196,7 @@ global_assignment =(varlist + kw_equals + explist)
 --
 
 statement =(kw_semicolon
+          / kw_break
           / do_statement
           / goto_statement
           / while_statement

@@ -186,10 +186,78 @@ end
 ]], true},
 {[[
 local nil_gen = true
-]], false},
+]], true},
 {[[
 return nil_gen
-]], false}
+]], true},
+{[[local range = function(start, stop, step)
+    assert(type(start) == "number", "start must be a number")
+
+    if step == nil then
+        if stop == nil then
+            if start == 0 then
+                return nil_gen, nil, nil
+            end
+            stop = start
+            start = stop > 0 and 1 or -1
+        end
+        step = start <= stop and 1 or -1
+    end
+
+    assert(type(stop) == "number", "stop must be a number")
+    assert(type(step) == "number", "step must be a number")
+    assert(step ~= 0, "step must not be zero")
+
+    if (step > 0) then
+        return wrap(range_gen, {stop, step}, start - step)
+    elseif (step < 0) then
+        return wrap(range_rev_gen, {stop, step}, start - step)
+    end
+end]], true},
+{[[local range = function(start, stop, step)
+    assert(type(start) == "number", "start must be a number")
+
+    if step == nil then
+        if stop == nil then
+            if start == 0 then
+                return nil_gen, nil, nil
+            end
+            stop = start
+            start = stop > 0 and 1 or -1
+        end
+        step = start <= stop and 1 or -1
+    end
+end]], true},
+{[[if step == nil then
+        if stop == nil then
+            if start == 0 then
+                return nil_gen, nil, nil
+            end
+            stop = start
+            start = stop > 0 and 1 or -1
+        end
+        step = start <= stop and 1 or -1
+    end]], true},
+{[[step = start <= stop and 1 or -1]], true},
+{[[
+local filter1_gen = function(fun, gen_x, param_x, state_x, a)
+    while true do
+        if state_x == nil or fun(a) then break; end
+        state_x, a = gen_x(param_x, state_x)
+    end
+    return state_x, a
+end
+]], true},
+{[[
+local filter1_gen = function(fun, gen_x, param_x, state_x, a)
+    return state_x, a
+end
+]], true},
+{[[while true do
+        if state_x == nil or fun(a) then break; end
+        state_x, a = gen_x(param_x, state_x)
+    end]], true},
+{[[if state_x == nil or fun(a) then break; end]], true}
 }
 
 local markerString = "#=============#"
@@ -206,7 +274,7 @@ for _, test in ipairs(tests) do
   local toParse = test[1]
   local enabled = test[2]
   
-  if enabled then
+  if not enabled then
     local function parseFn() parsed = parse(toParse) end
     local function errorHandler(errorMessage)
       print(markerString .. "WHEN RUNNING:", toMarkedString(toParse))
@@ -221,7 +289,7 @@ for _, test in ipairs(tests) do
         print(markerString .. "WHEN RUNNING:", toMarkedString(toParse))
         print(markerString .. "THE PARSER FAILED TO MATCH THE INPUT, PRODUCING:", toMarkedString(parsed))
         print(markerString .. "=-=-=-=-=-=-=-=-=-=-=")
-      else
+      elseif verbose then
         print(markerString .. "WHEN RUNNING:", toMarkedString(toParse))
         print(markerString .. "THE PARSER SUCCEEDED")
         print(markerString .. "=-=-=-=-=-=-=-=-=-=-=")

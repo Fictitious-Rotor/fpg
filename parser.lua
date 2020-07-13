@@ -30,15 +30,20 @@ local getRefuseBacktrack, setRefuseBacktrack = getterSetter("refuseBacktrack")
 getNeedsWhitespace, setNeedsWhitespace = getterSetter("needsWhitespace")
 
 local parsedLogCharLimit = 35
+local parsedErrorCharLimit = 300
 
-local function _logOptional(msg1, pat, msg2, strIdx, msg3, parsed)
+local function _logOptional(pat, parsed, ...)
   local stringValue = tostring(pat)
 
   if (not (stringValue == "ignore" and type(pat) == "table")) then
-    if msg2 then
-      print(msg1, stringValue, msg2, strIdx, msg3, parsed and table.concat(parsed:take(parsedLogCharLimit)))
-    else
-      print(msg1, pat)
+    for _, v in pairs({...}) do
+      io.write(tostring(v), "\t")
+    end
+    
+    io.write("with pattern:\t", tostring(pat), "\n")
+    
+    if parsed then
+      print("and parsed:", table.concat(parsed:take(parsedLogCharLimit)), "\n")
     end
   end
 end
@@ -48,9 +53,9 @@ local function stub() end
 
 -- Exchange print and indentedPrint to 'stub' to disable logging.
 local _print = print
-local print = _print
+local print = stub --_print
 
-local logOptional = _logOptional
+local logOptional = stub --_logOptional
 
 --[========]--
 --|Lateinit|--------------------------------------------------------------------------------------------------
@@ -118,14 +123,14 @@ local function concatenationNoWhitespace(left, right)
   if not right then error("Missing right pattern") end
   
   return patternNoWhitespace(function(strIdx, parsed)
-    logOptional("About to run intersection left:", left, "with strIdx of:", strIdx, "and parsed of:", parsed)
+    logOptional(left, parsed, "About to run intersection left with strIdx of:", strIdx)
     local leftStrIdx, leftParsed = left(strIdx, parsed)
-    logOptional("INTERSECTION LEFT PATTERN", left, "LEFT STR IDX", leftStrIdx, "PRODUCED", leftParsed)
+    logOptional(left, leftParsed, "INTERSECTION LEFT PATTERN LEFT STR IDX", leftStrIdx)
     
     if leftStrIdx then
-      logOptional("About to run intersection right:", right)
+      logOptional(right, nil, "About to run intersection right:")
       local rightStrIdx, rightParsed = right(leftStrIdx, leftParsed)
-      logOptional("INTERSECTION RIGHT PATTERN", right, "RIGHT STR IDX", rightStrIdx, "PRODUCED", rightParsed)
+      logOptional(right, rightParsed, "INTERSECTION RIGHT PATTERN RIGHT STR IDX", rightStrIdx)
       
       if rightStrIdx then        
         return rightStrIdx, rightParsed
@@ -148,29 +153,29 @@ local function patternConcatenation(left, right)
   if enforceWhitespace then print("Enforcing whitespace for keys of ", left, "and", right) end
   
   local concatenatedPattern = pattern(function(strIdx, parsed)
-    logOptional("About to run intersection left:", left, "with strIdx of:", strIdx, "and parsed of:", parsed)
+    logOptional(left, parsed, "About to run intersection left with strIdx of:", strIdx)
     local leftStrIdx, leftParsed = left(strIdx, parsed)
-    logOptional("INTERSECTION LEFT PATTERN", left, "LEFT STR IDX", leftStrIdx, "PRODUCED", leftParsed)
+    logOptional(left, leftParsed, "INTERSECTION LEFT PATTERN LEFT STR IDX", leftStrIdx)
     
     if leftStrIdx then
-      logOptional("About to run whitespace:")
+      logOptional(Whitespace, nil, "About to run whitespace:")
       local whitespaceStrIdx, whitespaceParsed = many(Whitespace)(leftStrIdx, leftParsed)
-      logOptional("INTERSECTION WHITESPACE STR IDX", whitespaceStrIdx, "PRODUCED", whitespaceParsed)
+      logOptional(right, whitespaceParsed, "INTERSECTION WHITESPACE STR IDX", whitespaceStrIdx)
       
       if not whitespaceStrIdx then
         if enforceWhitespace then
-          error(string.format("Missing whitespace between patterns '%s' and '%s':\n\tAt position: %s\n\tWith parsed of %s\n", left, leftStrIdx, leftParsed))
+          error(string.format("Missing whitespace between patterns '%s' and '%s':\n\tAt position: %s\n\tWith parsed of %s\n", left, leftStrIdx, table.concat(leftParsed:take(parsedErrorCharLimit))))
         else
           whitespaceStrIdx, whitespaceParsed = leftStrIdx, leftParsed
         end
       end
       
-      logOptional("About to run intersection right:", right)
+      logOptional(right, nil, "About to run intersection right:")
       local rightStrIdx, rightParsed = right(whitespaceStrIdx, whitespaceParsed)
-      logOptional("INTERSECTION RIGHT PATTERN", right, "RIGHT STR IDX", rightStrIdx, "PRODUCED", rightParsed)
+      logOptional(right, rightParsed, "INTERSECTION RIGHT PATTERN RIGHT STR IDX", rightStrIdx)
       
       if not rightStrIdx and leftRefusesBacktrack then -- A hanging keyword is invalid syntax. Time to crash out.
-        error(string.format("Unable to parse after keyword: %s\nAt position: %s\nWith parsed of %s\n", left, leftStrIdx, leftParsed))
+        error(string.format("Unable to parse after keyword: %s\nAt position: %s\nWith parsed of %s\n", left, leftStrIdx, table.concat(leftParsed:take(parsedErrorCharLimit))))
       end
       
       return rightStrIdx, rightParsed
@@ -188,17 +193,17 @@ local function patternAlternation(left, right)
   if not right then error("Missing right pattern") end
   
   return pattern(function(strIdx, parsed)
-    logOptional("Union about to run left:", left)
+    logOptional(left, nil, "Union about to run left:")
     local leftStrIdx, leftParsed = left(strIdx, parsed)
-    logOptional("UNION LEFT PATTERN", left, "LEFT STR IDX", leftStrIdx, "PRODUCED", leftParsed)
+    logOptional(left, leftParsed, "UNION LEFT PATTERN LEFT STR IDX", leftStrIdx)
     
     if leftStrIdx then
       return leftStrIdx, leftParsed 
     end
     
-    logOptional("\nUnion about to run right:", right)
+    logOptional(right, nil, "\nUnion about to run right:")
     local rightStrIdx, rightParsed = right(strIdx, parsed)
-    logOptional("UNION RIGHT PATTERN", right, "RIGHT STR IDX", rightStrIdx, "PRODUCED", rightParsed)
+    logOptional(right, rightParsed, "UNION RIGHT PATTERN RIGHT STR IDX", rightStrIdx)
     
     return rightStrIdx, rightParsed
   end) * ("(" .. tostring(left) .. " / " .. tostring(right) .. ")")
@@ -209,7 +214,7 @@ function maybe(childPattern)
   if not childPattern then error("Missing child pattern") end
   
   return pattern(function(strIdx, parsed)
-    print("Executing maybe:", childPattern, strIdx, parsed)
+    logOptional(childPattern, parsed, "Executing maybe with strIdx:", strIdx)
     local childStrIdx, childParsed = childPattern(strIdx, parsed)
     
     if childStrIdx then
@@ -225,9 +230,9 @@ function many(childPattern)
 	if not childPattern then error("Missing child pattern") end
   
   return pattern(function(strIdx, parsed)
-    print("Executing many:", childPattern, strIdx, parsed)
+    logOptional(childPattern, parsed, "Executing many with strIdx:", strIdx)
     return (childPattern + maybe(many(childPattern)))(strIdx, parsed)
-  end)
+  end) * ("many(" .. tostring(childPattern) .. ")")
 end
 
 -- Pattern appears zero or more times. Similar to '*' in regex
@@ -299,6 +304,18 @@ function notPattern(childPattern)
        and not childPattern(strIdx, parsed)
        and strIdx:withFollowingIndex(), cons(value, parsed)
   end) * ("notPattern(" .. tostring(childPattern) .. ")")
+end
+
+function notToBeConfusedWith(childPattern, ...)
+  local otherPatterns = {...}
+
+  return pattern(function(strIdx, parsed)
+    for _, otherPattern in pairs(otherPatterns) do
+      if otherPattern(strIdx, parsed) then return false end
+    end
+    
+    return childPattern(strIdx, parsed)
+  end)
 end
 
 --[==========]--

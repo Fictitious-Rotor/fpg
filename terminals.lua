@@ -77,9 +77,9 @@ kw_hash = sym "#"
 kw_plus = sym "+"
 kw_lte = sym "<="
 kw_gte = sym ">="
-kw_dot = sym "."
-kw_lt = sym "<"
-kw_gt = sym ">"
+kw_dot = notToBeConfusedWith(sym ".", kw_concat)
+kw_lt = notToBeConfusedWith(sym "<", kw_lte)
+kw_gt = notToBeConfusedWith(sym ">", kw_gte)
 
 
 return keywordExports
