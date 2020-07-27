@@ -1,22 +1,10 @@
 local view = require "debugview"
 
---[[
+local sMatch = string.match
 
-Let's talk about this tokeniser then
-The tokeniser is responsible for pulling out all of the reserved patterns and packing everything else into a generic pattern.
-One of the things I need to manage is that every keyword should ensure that it's not an identifier.
-How am I going to represent that in a manner that isn't expensive?
-
-I'm thinking create some sort of wrapper function that, assuming that findReserved did indeed find a reserved, will then run a "[%w_]" check.
-Something else to fear is that we'll hit a symbol and it'll still look for one of those.
-We can probably just make a different table and use that as a different root for searchBranch.
-What's quite fun about that is it'll move the whole "keywords mustn't be identifiers" business into plugin code.
-
-Let's put something together
-
-I should probably make a simple fn wrapper for the iterator so I can add a peek function.
-I can probably leave it as stateful as it's not meant to backtrack anyways. I just need the ability to not advance.
-]]
+local function makeMatcher(lPat)
+  return function(str) return sMatch(str, lPat) end
+end
 
 local function arrContains(tbl, value)
   for _, item in ipairs(tbl) do
@@ -26,20 +14,20 @@ local function arrContains(tbl, value)
   return false
 end
 
-local strMatch = string.match
+local function arrPartition(tbl, pred)
+  local trues, falses = {}, {}
+  local selectedTable
 
-function consumeIdent(readChar, askReRead, reservedPrefix)
-  local charTable = {}
-  local curChar = readChar()
-  
-  while strMatch(curChar, "[%w_]") do
-    charTable[#charTable + 1] = curChar
-    curChar = readChar()
+  for _, val in ipairs(tbl) do
+    selectedTable = pred(val) and trues or falses
+    
+    selectedTable[#selectedTable + 1] = val
   end
   
-  askReRead()
-  return table.concat(charTable), #charTable > 1
+  return trues, falses
 end
+
+---------
 
 local stringableMeta = { __tostring = function(tbl) return tbl.value end }
 
@@ -77,17 +65,67 @@ function newIter(fn) -- Returns readFn & shouldReRead
   return readFn, askReRead, isEmpty
 end
 
+-----------
+
+function consumeIdent(readChar, askReRead, canBeIdentifier)
+  local charTable = {}
+  local curChar = readChar()
+  
+  while canBeIdentifier(curChar)  do
+    charTable[#charTable + 1] = curChar
+    curChar = readChar()
+  end
+  
+  askReRead()
+  return table.concat(charTable), #charTable > 1
+end
+
+function consumeReservedStrings(readChar, askReRead, reservedStrings)
+  
+end
+
+local function makeMappingMatcher(mapping, elementKey)
+  return function(value)
+    for k,v in pairs(mapping) do
+      if v[elementKey](value) then
+        return true
+      end
+    end
+    
+    return false
+  end
+end
 
 -- sort by "canBeIdentifier"
 -- Which allows me to group into keywords & symbols
 -- perhaps "reservedIdents" and "reservedStrings"
 
-local function readString(str, consumeWhitespace, consumeIdentifier, consumeReservedString)
-  local readChar, askReRead, isEmpty = newIter(str:gmatch("."))
+
+
+-- YOU FORGOT ABOUT STRINGS!!
+
+local Tokeniser = {}
+Tokeniser.__index = Tokeniser
+
+-- Put "LPat corresponds to Lua's patterns" in the documentation somewhere appropriate
+-- Put something about shortening "language construct" to LC
+local function Tokeniser.new(isWhitespaceLPat, languageConstructMapping, allReserved)
+  local reservedLCs, reservedStrings = arrPartition(allReserved, makeMappingMatcher(languageConstructMapping, "isMatch"))
+  local sortedReserved = table.sort(reservedStrings)
+
+  return setmetatable({ 
+    isWhitespaceChar = isWhitespaceChar, 
+    reservedLCs = reservedLCs,
+    reservedStrings = sortedReserved
+  }, Tokeniser)
+end
+
+function Tokeniser.readString(inputString, isWhitespaceChar, isIdentifierChar, reservedLCs, reservedStrings)
+  local readChar, askReRead, isEmpty = newIter(inputString:gmatch("."))
   
   local outTokens = {}
   local canTokenise = true
-  local found, succeeded
+  local found, succeeded, isReserved
   
   repeat
     found, succeeded = consumeWhitespace()
@@ -99,13 +137,9 @@ local function readString(str, consumeWhitespace, consumeIdentifier, consumeRese
     found, succeeded = consumeIdentifier(readChar, askReRead)
     
     if succeeded then
-      local isReserved = arrContains(reservedIdents, found)
+      isReserved = arrContains(reservedLCs, found)
       
-      if isReserved then
-        outTokens[#outTokens + 1] = found
-      else
-        outTokens[#outTokens + 1] = identifier(found)
-      end
+      outTokens[#outTokens + 1] = isReserved and found or identifier(found)
     else
       found, succeeded = consumeReservedString(readChar, askReRead)
       
@@ -124,5 +158,4 @@ local function readString(str, consumeWhitespace, consumeIdentifier, consumeRese
   return outTokens
 end
 
-populateTree()
-print(view(tokeniserTree))
+return Tokeniser.new
