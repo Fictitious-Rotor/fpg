@@ -1,5 +1,3 @@
-local view = require "debugview"
-
 local Tokeniser = {}
 
 function Struct(propertyNames)

@@ -1,5 +1,4 @@
-local Tokeniser = require "tokeniser"
-local view = require "debugview"
+local Tokeniser = assert(dofile("../../Common/tokeniser.lua"))
 local pattern = Tokeniser.pattern
 local Token = Tokeniser.makeToken
 
@@ -12,7 +11,7 @@ local gsub = string.gsub
 
 local function makeLuaPatternMatcher(lPat)
   return function(str, startPos)
-    return strMatch(str, lPat, startPos) 
+    return strMatch(str, lPat, startPos)
   end
 end
 
@@ -47,11 +46,11 @@ end
 
 local Identifier = Token "Identifier"
 local Whitespace = Token "Whitespace"
-local Number = Token "Number"
 
 local Keyword = Token "Keyword"
 local Symbol = Token "Symbol"
 
+local Number = Token "Number"
 local String = Token "String"
 local Comment = Token "Comment"
 
@@ -73,7 +72,7 @@ end
 local function makeKeywordMatcher(aKeyword)
   local matcher = makeLuaPatternMatcher(anchorPattern(aKeyword))
   local token = Keyword(aKeyword)
-
+  
   return makeBasicMatcher(matcher, function() return token end)
 end
 
@@ -184,63 +183,48 @@ local allPatterns = {
 }
 
 local staticTokens = { -- Convert all strings into tokens, then into patterns, then add them to allPatterns
-  { reservedSymbols, function(symbol) return pattern(makeSymbolMatcher(symbol)) end },
-  { reservedKeywords, function(keyword) return pattern(makeKeywordMatcher(keyword)) end },
+  { reservedSymbols, makeSymbolMatcher },
+  { reservedKeywords, makeKeywordMatcher },
 }
+
+local literalMatchers = {}
 
 for _, tokensAndMatcher in ipairs(staticTokens) do
   local tokenSet = tokensAndMatcher[1]
-  local patternMaker = tokensAndMatcher[2]
+  local matcherMaker = tokensAndMatcher[2]
 
   for _, value in ipairs(tokenSet) do
-    allPatterns[#allPatterns + 1] = patternMaker(value)
+    local token = matcherMaker(value)
+    local madePattern = pattern(token)
+    
+    allPatterns[#allPatterns + 1] = madePattern
+    literalMatchers[value] = function(v) return v == value end
   end
 end
 
 allPatterns[#allPatterns + 1] = pattern(matchIdentifier) -- Identifier must be checked after keywords so that they have precedence
 
+local function makeTypeChecker(typeName)
+  return function(tbl)
+    return tbl 
+       and type(tbl) == "table"
+       and tbl.type == typeName
+  end
+end
+
+local constructNames = { "String", "Comment", "Whitespace", "Number", "Identifier" }
+local constructMatchers = {}
+
+for _, name in ipairs(constructNames) do
+  constructMatchers[name] = makeTypeChecker(v)
+end
+
 --------------------------------------------------
 
-local input = [====[
-local function matchString(aStr, startPos)
-  local stringOpener = strMatch(aStr, "^['\"]", startPos)
-  
-  if stringOpener then
-    local getContent = "^[^\n" .. stringOpener .. "]*"
-    local contentStartPos = startPos + #stringOpener
-  
-    local content = strMatch(aStr, getContent, contentStartPos)
-    
-    if not strMatch(aStr, stringOpener, contentStartPos + #content) then
-      error("Unterminated string!")
-    end
-    
-    return String(content), (startPos + #stringOpener + #content + #stringOpener)
-  else
-    local multilineOpener = strMatch(aStr, "^%[=*%[", startPos)
-    
-    if multilineOpener then
-      local multilineCloser = gsub(multilineOpener, "%[", "]")
-      local getContent = "(.-)" .. multilineCloser
-      local contentStartPos = startPos + #multilineOpener + 1
-      
-      local content = strMatch(aStr, getContent, contentStartPos)
-      
-      return String(content), (contentStartPos + #content + #multilineCloser)
-    end
-  end
-  
-  return false, startPos
-end
-]====]
-print("Input is:", input)
-local output = Tokeniser.lex(input, allPatterns)
-print("Lexed output:", view(output))
-local tbl = {}
-
-for _, v in ipairs(output) do
-  tbl[#tbl + 1] = v.content
-end
-
-print("Lexed content:")
-print(table.concat(tbl))
+return {
+  lex = function(str) 
+    return Tokeniser.lex(str, allPatterns)
+  end,
+  constructMatchers = constructMatchers,
+  literalMatchers = literalMatchers
+}

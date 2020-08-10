@@ -5,7 +5,7 @@ List.__index = List
 List.null = setmetatable({ head = false, tail = false, length = 0 }, List)
 
 function List.cons(head, tail)
-  return setmetatable({ head = head, tail = tail, length = tail.length + 1 }, List)
+  return setmetatable({ head = head, tail = tail }, List)
 end
 
 function List.getHead(tbl)
@@ -14,10 +14,6 @@ end
 
 function List.getTail(tbl)
   return tbl.tail
-end
-
-function List.getLength(tbl)
-  return tbl.length
 end
 
 local function setValue(val, tbl, idx)
@@ -39,7 +35,7 @@ function List.take(instance, count)
     end
   end
   
-  return loop(instance, count or instance:getLength()), nil -- suppressing second argument
+  return loop(instance, count or math.huge), nil -- suppressing second argument
 end
 
 function List.takeWhile(instance, predicate)
