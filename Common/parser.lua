@@ -1,22 +1,40 @@
-local d -- Definition
-local l -- Labeled definition
-local r -- Repeat definition
+local TableReader = require "Utils.TableReader"
+local List = require "Utils.SinglyLinkedList"
+local view = require "debugview"
 
---- Definition
+local null = List.null
+local cons = List.cons
+
+local definition -- Definition
+local labeledDefinition -- Labeled definition
+local repeatedDefinition -- Repeat definition
+
+----------------- Definition
 
 local function concat(priorReader, priorParsed, iter, gen, lastKey)
-  local def = iter(gen, lastKey)
+  local idx, def = iter(gen, lastKey)
   if not def then return priorReader, priorParsed end
   
   local reader, parsed = def(priorReader, priorParsed)
   if not reader then return false end
   
-  return concat(reader, parsed, iter, gen, def)
+  return concat(reader, parsed, iter, gen, idx)
 end
 
 local definitionMeta = {
   __call = function(self, reader, parsed)
     return concat(reader, parsed, ipairs(self))
+  end,
+  __div = function(self, other)
+    return function(priorReader, priorParsed)
+      local parsed, reader = self(priorReader, priorParsed)
+      
+      if parsed then
+        return parsed, reader
+      else
+        return other(priorParsed, priorReader)
+      end
+    end
   end
 }
 
@@ -32,9 +50,7 @@ local function makeDefinitionMaker(literalConsumers)
   end
 end
 
----
---
---- Labeled definition
+----------------- Labeled definition
 
 local labeledDefinitionMatcher = {
   __call = function(self, reader, parsed)
@@ -42,7 +58,7 @@ local labeledDefinitionMatcher = {
   end
 }
 
-local function makeLabeledDefinitionMatcher(_ENV)
+local function makeLabeledDefinitionMaker(_ENV)
   return function(tbl)
     for name, definition in pairs(tbl) do
       _ENV[name] = definition
@@ -52,28 +68,27 @@ local function makeLabeledDefinitionMatcher(_ENV)
   end
 end
 
----
---
---- Repeated definition
+----------------- Repeated definition
 
 local function makeConsumer(matcher)
-  return function(priorReader, priorParsed)
-    local token = priorReader:getValue()
+  return function(reader, parsed)
+    print("running consumer:", matcher, view(reader:getValue()), view(parsed:getHead()))
+    local token = reader:getValue()
 
     if matcher(token) then
-      return priorReader:withFollowingIndex(), cons(token, priorParsed)
+      return reader:withFollowingIndex(), cons(token, parsed)
     else
       return false
     end
   end
 end
 
-r = function(minimumCount, maximumCount)
+repeatedDefinition = function(minimumCount, maximumCount)
   local minimumCount = minimumCount or 1
   local maximumCount = maximumCount or math.huge
 
   return function(defTbl)
-    local def = d(defTbl)
+    local def = definition(defTbl)
 
     local function loop(priorReader, priorParsed, count)
       local reader, parsed = def(priorReader, priorParsed)
@@ -97,33 +112,36 @@ r = function(minimumCount, maximumCount)
   end
 end
 
---- Parser
+----------------- Parser
 
 local Parser = {}
 
-local function loadFile(address)
+local function loadFile(address, _ENV)
   local fn, message = loadfile(address, "t", _ENV)
   return fn and fn() or error(message)
 end
 
+local function each(fn, tbl)
+  for k,v in pairs(tbl) do
+    fn(k,v)
+  end
+end
+
 function Parser.loadGrammar(grammarFileAddress, constructMatchers, literalMatchers)
   local _ENV = setmetatable({ _G = _G }, { __index = _G })
-
-  for name, matcher in pairs(constructMatchers) do
-    _ENV[name] = makeConsumer(matcher)
-  end
-
   local literalConsumers = {}
+  
+  each(function(name, matcher) _ENV[name] = makeConsumer(matcher) end, constructMatchers)
+  each(function(name, matcher) literalConsumers[name] = makeConsumer(matcher) end, literalMatchers)
 
-  for name, matcher in pairs(literalMatchers) do
-    literalConsumers[name] = makeConsumer(matcher)
-  end
+  definition = makeDefinitionMaker(literalConsumers)
+  labeledDefinition = makeLabeledDefinitionMaker(_ENV)
+  
+  each(function(shorthand, func) _ENV[shorthand] = func end, { d = definition, l = labeledDefinition, r = repeatedDefinition })
+  --each(print, _ENV)
 
-  d = makeDefinitionMatcher(literalConsumers)
-  l = makeLabeledDefinitionMatcher(_ENV)
-
-  local grammar = loadFile(grammarFileAddress, _ENV)
-
+  local grammar = require(grammarFileAddress)(_ENV)
+  
   return function(tokenList)
     return grammar(TableReader.new(tokenList), null)
   end

@@ -1,6 +1,7 @@
-local Tokeniser = assert(dofile("../../Common/tokeniser.lua"))
+local Tokeniser = require "Common.tokeniser"
 local pattern = Tokeniser.pattern
 local Token = Tokeniser.makeToken
+local view = require "debugview"
 
 --------------------------------------------------
 
@@ -198,7 +199,11 @@ for _, tokensAndMatcher in ipairs(staticTokens) do
     local madePattern = pattern(token)
     
     allPatterns[#allPatterns + 1] = madePattern
-    literalMatchers[value] = function(v) return v == value end
+    literalMatchers[value] = function(token) 
+      return token 
+         and type(token) == "table"
+         and token.content == value
+    end
   end
 end
 
@@ -216,7 +221,7 @@ local constructNames = { "String", "Comment", "Whitespace", "Number", "Identifie
 local constructMatchers = {}
 
 for _, name in ipairs(constructNames) do
-  constructMatchers[name] = makeTypeChecker(v)
+  constructMatchers[name] = makeTypeChecker(name)
 end
 
 --------------------------------------------------
