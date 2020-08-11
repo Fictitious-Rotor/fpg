@@ -27,12 +27,12 @@ local definitionMeta = {
   end,
   __div = function(self, other)
     return function(priorReader, priorParsed)
-      local parsed, reader = self(priorReader, priorParsed)
+      local reader, parsed = self(priorReader, priorParsed)
       
       if parsed then
-        return parsed, reader
+        return reader, parsed
       else
-        return other(priorParsed, priorReader)
+        return other(priorReader, priorParsed)
       end
     end
   end
@@ -72,7 +72,6 @@ end
 
 local function makeConsumer(matcher)
   return function(reader, parsed)
-    print("running consumer:", matcher, view(reader:getValue()), view(parsed:getHead()))
     local token = reader:getValue()
 
     if matcher(token) then
@@ -138,12 +137,14 @@ function Parser.loadGrammar(grammarFileAddress, constructMatchers, literalMatche
   labeledDefinition = makeLabeledDefinitionMaker(_ENV)
   
   each(function(shorthand, func) _ENV[shorthand] = func end, { d = definition, l = labeledDefinition, r = repeatedDefinition })
-  --each(print, _ENV)
 
   local grammar = require(grammarFileAddress)(_ENV)
   
   return function(tokenList)
-    return grammar(TableReader.new(tokenList), null)
+    local reader, result = grammar(TableReader.new(tokenList), null)
+    
+    return result
+       and result:take()
   end
 end
 

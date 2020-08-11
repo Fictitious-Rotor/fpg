@@ -2,7 +2,7 @@ local List = {}
 
 List.__index = List
 
-List.null = setmetatable({ head = false, tail = false, length = 0 }, List)
+List.null = setmetatable({ head = false, tail = false }, List)
 
 function List.cons(head, tail)
   return setmetatable({ head = head, tail = tail }, List)
