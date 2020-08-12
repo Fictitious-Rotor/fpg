@@ -6,10 +6,12 @@ local null = List.null
 local cons = List.cons
 
 local definition -- Definition
-local labeledDefinition -- Labeled definition
+local globalDefinition -- Global definition
 local repeatedDefinition -- Repeat definition
 
 ----------------- Definition
+
+local definitionMeta
 
 local function concat(priorReader, priorParsed, iter, gen, lastKey)
   local idx, def = iter(gen, lastKey)
@@ -21,9 +23,12 @@ local function concat(priorReader, priorParsed, iter, gen, lastKey)
   return concat(reader, parsed, iter, gen, idx)
 end
 
-local definitionMeta = {
-  __call = function(self, reader, parsed)
-    return concat(reader, parsed, ipairs(self))
+definitionMeta = {
+  __call = function(self, priorReader, priorParsed)
+    local reader, parsed = concat(priorReader, null, ipairs(self))
+    if not reader then return false end
+    
+    return reader, cons({ tokens = parsed:take(), name = self.name }, priorParsed)
   end,
   __div = function(self, other)
     return function(priorReader, priorParsed)
@@ -39,32 +44,44 @@ local definitionMeta = {
 }
 
 local function makeDefinitionMaker(literalConsumers)
-  return function(tbl)
-    for idx, value in ipairs(tbl) do
-      if type(value) == "string" then
-         tbl[idx] = literalConsumers[value]
+  return function(tblOrString)
+    local function convertLiterals(tbl) -- Inside closure to get _ENV
+      for idx, value in ipairs(tbl) do
+        if type(value) == "string" then
+           tbl[idx] = literalConsumers[value]
+        end
       end
+      
+      return setmetatable(tbl, definitionMeta)
     end
-    
-    return setmetatable(tbl, definitionMeta)
+  
+    if type(tblOrString) == "string" then
+      return function(defTbl) 
+        local tbl = convertLiterals(defTbl)
+        tbl.name = tblOrString
+        return tbl
+      end
+    else
+      return convertLiterals(tblOrString)
+    end
   end
 end
 
------------------ Labeled definition
+----------------- Global definition
 
-local labeledDefinitionMatcher = {
+local globalDefinitionMeta = {
   __call = function(self, reader, parsed)
     return reader, parsed
   end
 }
 
-local function makeLabeledDefinitionMaker(_ENV)
+local function makeGlobalDefinitionMaker(_ENV)
   return function(tbl)
     for name, definition in pairs(tbl) do
       _ENV[name] = definition
     end
 
-    return setmetatable(tbl, labeledDefinitionMeta)
+    return setmetatable(tbl, globalDefinitionMeta)
   end
 end
 
@@ -82,31 +99,42 @@ local function makeConsumer(matcher)
   end
 end
 
+local function repeatDefinition(minimumCount, maximumCount, defTbl, name)
+  -- NAME ISN'T GOING THROUGH! FIX ME!
+  local def = name and definition(name)(defTbl) or definition(defTbl)
+
+  local function loop(priorReader, priorParsed, count)
+    local reader, parsed = def(priorReader, priorParsed)
+
+    if reader then
+      if count <= maximumCount then
+        return loop(reader, parsed, count + 1)
+      end
+    else
+      if count >= minimumCount then
+        return priorReader, priorParsed 
+      end
+    end 
+
+    return false
+  end
+
+  return function(priorReader, priorParsed)
+    return loop(priorReader, priorParsed, 1)
+  end
+end
+
 repeatedDefinition = function(minimumCount, maximumCount)
   local minimumCount = minimumCount or 1
   local maximumCount = maximumCount or math.huge
 
-  return function(defTbl)
-    local def = definition(defTbl)
-
-    local function loop(priorReader, priorParsed, count)
-      local reader, parsed = def(priorReader, priorParsed)
-
-      if reader then
-        if count <= maximumCount then
-          return loop(reader, parsed, count + 1)
-        end
-      else
-        if count >= minimumCount then
-          return priorReader, priorParsed 
-        end
-      end 
-
-      return false
-    end
-
-    return function(priorReader, priorParsed)
-      return loop(priorReader, priorParsed, 1)
+  return function(defTblOrString)
+    if type(defTblOrString) == "string" then 
+      return function(defTbl)
+        return repeatDefinition(minimumCount, maximumCount, defTbl, defTblOrString)
+      end
+    else
+      return repeatDefinition(minimumCount, maximumCount, defTblOrString)
     end
   end
 end
@@ -134,9 +162,9 @@ function Parser.loadGrammar(grammarFileAddress, constructMatchers, literalMatche
   each(function(name, matcher) literalConsumers[name] = makeConsumer(matcher) end, literalMatchers)
 
   definition = makeDefinitionMaker(literalConsumers)
-  labeledDefinition = makeLabeledDefinitionMaker(_ENV)
+  globalDefinition = makeGlobalDefinitionMaker(_ENV)
   
-  each(function(shorthand, func) _ENV[shorthand] = func end, { d = definition, l = labeledDefinition, r = repeatedDefinition })
+  each(function(shorthand, func) _ENV[shorthand] = func end, { d = definition, g = globalDefinition, r = repeatedDefinition })
 
   local grammar = require(grammarFileAddress)(_ENV)
   

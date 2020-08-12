@@ -2,7 +2,7 @@ local tokeniser = require "Languages.Lua.tokeniser"
 local parser = require "Common.Parser"
 local view = require "debugview"
 
-local aString = "if programWorks then print('Congratulations!') end"
+local aString = "if programWorks then print('Congratulations!') elseif run('Woohoo!') elseif act('Happy') else print('Oh :(') end"
 
 local lexed = tokeniser.lex(aString)
 print("Lexed string:", view(lexed))
