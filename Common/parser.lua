@@ -1,73 +1,146 @@
+setmetatable(_G, {
+  __index = function(tbl, key)
+    error(string.format("Missing global variable with key: '%s'", key))
+  end,
+  __newindex = function(tbl, key, val)
+    rawset(tbl, key, val == true or error "Cannot reference a global without prior declaration")
+  end
+})
+
 local TableReader = require "Utils.TableReader"
 local List = require "Utils.SinglyLinkedList"
 local view = require "debugview"
 
-local null = List.null
+local listNull = List.null
 local cons = List.cons
 
-local definition -- Definition
-local globalDefinition -- Global definition
-local repeatedDefinition -- Repeat definition
-
------------------ Definition
-
+local definition
 local definitionMeta
+local globalDefinition
+local repeatedDefinition
+local alternation
+local alternationMeta
 
-local function concat(priorReader, priorParsed, iter, gen, lastKey)
+local consumerMeta = {
+  __call = function(self, reader, parsed)
+    local token = reader:getValue()
+    print("consumer:", "token is:", view(token), "Reader is:", view(reader), "Parsed is:", view(parsed))
+
+    if self.matcher(token) then
+      return reader:withFollowingIndex(), cons(token, parsed)
+    else
+      return false
+    end
+  end,
+  __tostring = function(self) return self.debugname end
+}
+
+local function makeConsumer(matcher, name)
+  return setmetatable({ matcher = matcher, debugname = name }, consumerMeta)
+end
+
+local function concatenate(priorReader, priorParsed, iter, gen, lastKey)
   local idx, def = iter(gen, lastKey)
   if not def then return priorReader, priorParsed end
   
+  print("Running:", view(def), "at index:", priorReader:getIndex())
   local reader, parsed = def(priorReader, priorParsed)
   if not reader then return false end
   
-  return concat(reader, parsed, iter, gen, idx)
+  return concatenate(reader, parsed, iter, gen, idx)
 end
 
-definitionMeta = {
-  __call = function(self, priorReader, priorParsed)
-    local reader, parsed = concat(priorReader, null, ipairs(self))
-    if not reader then return false end
-    
-    return reader, cons({ tokens = parsed:take(), name = self.name }, priorParsed)
-  end,
-  __div = function(self, other)
-    return function(priorReader, priorParsed)
-      local reader, parsed = self(priorReader, priorParsed)
+-----------------<| Alternation
+
+local function makeAlternationMeta()
+  return {
+    __call = function(self, priorReader, priorParsed)
+      local reader, parsed = self.left(priorReader, priorParsed)
       
       if parsed then
+        print("Alternation: left", self.left, "succeeded")
         return reader, parsed
       else
-        return other(priorReader, priorParsed)
+        print("Alternation: left", self.left, "failed. Trying", self.right)
+        return self.right(priorReader, priorParsed)
+      end
+    end,
+    __div = alternation,
+    __tostring = function(self)
+      return string.format("(%s / %s)", self.left, self.right)
+    end
+  }
+end
+
+local function makeAlternationMaker(literalConsumers)
+  return function(self, other)
+    if type(other) == "string" then
+      other = literalConsumers[other]
+    end 
+    
+    return setmetatable({ left = self, right = other }, alternationMeta)
+  end
+end
+
+-----------------<| Definition
+
+local function makeDefinitionMeta()
+  return {
+    __div = alternation,
+    __call = function(self, priorReader, priorParsed)
+      local name = self.name
+      local startingParsed = name and listNull or priorParsed
+      
+      local reader, parsed = concatenate(priorReader, startingParsed, ipairs(self))
+      print("Definition returned:", view(reader), view(parsed))
+      if not reader then return false end
+      
+      if name then
+        return reader, cons({ tokens = parsed:take(), name = name }, priorParsed)
+      else
+        return reader, parsed
+      end
+    end,
+    __tostring = function(self)
+      local vals = {}
+      for _,v in ipairs(self) do vals[#vals + 1] = v end
+      local valsStr = table.concat(vals, ",")
+      local name = self.name
+      
+      if name then
+        return string.format("(%s:(%s))", name, valsStr)
+      else
+        return string.format("(%s)", valsStr)
       end
     end
+  }
+end
+
+local function convertLiterals(tbl, literalConsumers)
+  for idx, value in ipairs(tbl) do
+    if type(value) == "string" then
+       tbl[idx] = literalConsumers[value]
+    end
   end
-}
+  
+  return setmetatable(tbl, definitionMeta)
+end
 
 local function makeDefinitionMaker(literalConsumers)
   return function(tblOrString)
-    local function convertLiterals(tbl) -- Inside closure to get _ENV
-      for idx, value in ipairs(tbl) do
-        if type(value) == "string" then
-           tbl[idx] = literalConsumers[value]
-        end
-      end
-      
-      return setmetatable(tbl, definitionMeta)
-    end
-  
     if type(tblOrString) == "string" then
       return function(defTbl) 
-        local tbl = convertLiterals(defTbl)
+        local tbl = convertLiterals(defTbl, literalConsumers)
         tbl.name = tblOrString
         return tbl
       end
     else
-      return convertLiterals(tblOrString)
+      return convertLiterals(tblOrString, literalConsumers)
     end
   end
 end
 
------------------ Global definition
+-----------------<| Global definition
 
 local globalDefinitionMeta = {
   __call = function(self, reader, parsed)
@@ -75,32 +148,19 @@ local globalDefinitionMeta = {
   end
 }
 
-local function makeGlobalDefinitionMaker(_ENV)
+local function makeGlobalDefinitionMaker(grammar_ENV)
   return function(tbl)
     for name, definition in pairs(tbl) do
-      _ENV[name] = definition
+      grammar_ENV[name] = definition
     end
 
     return setmetatable(tbl, globalDefinitionMeta)
   end
 end
 
------------------ Repeated definition
-
-local function makeConsumer(matcher)
-  return function(reader, parsed)
-    local token = reader:getValue()
-
-    if matcher(token) then
-      return reader:withFollowingIndex(), cons(token, parsed)
-    else
-      return false
-    end
-  end
-end
+-----------------<| Repeated definition
 
 local function repeatDefinition(minimumCount, maximumCount, defTbl, name)
-  -- NAME ISN'T GOING THROUGH! FIX ME!
   local def = name and definition(name)(defTbl) or definition(defTbl)
 
   local function loop(priorReader, priorParsed, count)
@@ -139,12 +199,12 @@ repeatedDefinition = function(minimumCount, maximumCount)
   end
 end
 
------------------ Parser
+-----------------<| Parser
 
 local Parser = {}
 
-local function loadFile(address, _ENV)
-  local fn, message = loadfile(address, "t", _ENV)
+local function loadFile(address, grammar_ENV)
+  local fn, message = loadfile(address, "t", grammar_ENV)
   return fn and fn() or error(message)
 end
 
@@ -155,23 +215,34 @@ local function each(fn, tbl)
 end
 
 function Parser.loadGrammar(grammarFileAddress, constructMatchers, literalMatchers)
-  local _ENV = setmetatable({ _G = _G }, { __index = _G })
+  local grammar_ENV = setmetatable({}, {})
   local literalConsumers = {}
   
-  each(function(name, matcher) _ENV[name] = makeConsumer(matcher) end, constructMatchers)
-  each(function(name, matcher) literalConsumers[name] = makeConsumer(matcher) end, literalMatchers)
+  each(function(name, matcher) grammar_ENV[name] = makeConsumer(matcher, name) end, constructMatchers)
+  each(function(name, matcher) literalConsumers[name] = makeConsumer(matcher, name) end, literalMatchers)
 
   definition = makeDefinitionMaker(literalConsumers)
-  globalDefinition = makeGlobalDefinitionMaker(_ENV)
+  alternation = makeAlternationMaker(literalConsumers)
+  definitionMeta = makeDefinitionMeta()
+  alternationMeta = makeAlternationMeta()
+  -- The way I handle string literals and alternation is pretty messy atm. Also the way I handle the passing of labels/names. Needs a rework
+  globalDefinition = makeGlobalDefinitionMaker(grammar_ENV)
   
-  each(function(shorthand, func) _ENV[shorthand] = func end, { d = definition, g = globalDefinition, r = repeatedDefinition })
-
-  local grammar = require(grammarFileAddress)(_ENV)
+  local grammarNull = setmetatable({}, {
+    __div = alternation,
+    __call = function() return false end,
+    __tostring = function() return "null" end
+  })
+  
+  each(function(shorthand, func) grammar_ENV[shorthand] = func end, { null = grammarNull, d = definition, g = globalDefinition, r = repeatedDefinition })
+  
+  local grammar = require(grammarFileAddress)(grammar_ENV)
   
   return function(tokenList)
-    local reader, result = grammar(TableReader.new(tokenList), null)
+    local reader, result = grammar(TableReader.new(tokenList), listNull)
+    print("Output is:", view(reader), view(result))
     
-    return result
+    return result ~= listNull
        and result:take()
   end
 end

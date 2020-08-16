@@ -211,9 +211,13 @@ allPatterns[#allPatterns + 1] = pattern(matchIdentifier) -- Identifier must be c
 
 local function makeTypeChecker(typeName)
   return function(tbl)
-    return tbl 
+    local output = tbl 
        and type(tbl) == "table"
        and tbl.type == typeName
+  
+    print("typeChecker matched: ", typeName, "against:", view(tbl))
+  
+    return output
   end
 end
 
