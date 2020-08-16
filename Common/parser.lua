@@ -24,7 +24,6 @@ local alternationMeta
 local consumerMeta = {
   __call = function(self, reader, parsed)
     local token = reader:getValue()
-    print("consumer:", "token is:", view(token), "Reader is:", view(reader), "Parsed is:", view(parsed))
 
     if self.matcher(token) then
       return reader:withFollowingIndex(), cons(token, parsed)
@@ -43,7 +42,6 @@ local function concatenate(priorReader, priorParsed, iter, gen, lastKey)
   local idx, def = iter(gen, lastKey)
   if not def then return priorReader, priorParsed end
   
-  print("Running:", view(def), "at index:", priorReader:getIndex())
   local reader, parsed = def(priorReader, priorParsed)
   if not reader then return false end
   
@@ -54,18 +52,16 @@ end
 
 local function makeAlternationMeta()
   return {
+    __div = alternation,
     __call = function(self, priorReader, priorParsed)
       local reader, parsed = self.left(priorReader, priorParsed)
       
       if parsed then
-        print("Alternation: left", self.left, "succeeded")
         return reader, parsed
       else
-        print("Alternation: left", self.left, "failed. Trying", self.right)
         return self.right(priorReader, priorParsed)
       end
     end,
-    __div = alternation,
     __tostring = function(self)
       return string.format("(%s / %s)", self.left, self.right)
     end
@@ -92,7 +88,6 @@ local function makeDefinitionMeta()
       local startingParsed = name and listNull or priorParsed
       
       local reader, parsed = concatenate(priorReader, startingParsed, ipairs(self))
-      print("Definition returned:", view(reader), view(parsed))
       if not reader then return false end
       
       if name then
@@ -103,7 +98,7 @@ local function makeDefinitionMeta()
     end,
     __tostring = function(self)
       local vals = {}
-      for _,v in ipairs(self) do vals[#vals + 1] = v end
+      for _,v in ipairs(self) do vals[#vals + 1] = tostring(v) end
       local valsStr = table.concat(vals, ",")
       local name = self.name
       
@@ -129,7 +124,7 @@ end
 local function makeDefinitionMaker(literalConsumers)
   return function(tblOrString)
     if type(tblOrString) == "string" then
-      return function(defTbl) 
+      return function(defTbl)
         local tbl = convertLiterals(defTbl, literalConsumers)
         tbl.name = tblOrString
         return tbl
@@ -215,7 +210,7 @@ local function each(fn, tbl)
 end
 
 function Parser.loadGrammar(grammarFileAddress, constructMatchers, literalMatchers)
-  local grammar_ENV = setmetatable({}, {})
+  local grammar_ENV = {}
   local literalConsumers = {}
   
   each(function(name, matcher) grammar_ENV[name] = makeConsumer(matcher, name) end, constructMatchers)
@@ -228,19 +223,38 @@ function Parser.loadGrammar(grammarFileAddress, constructMatchers, literalMatche
   -- The way I handle string literals and alternation is pretty messy atm. Also the way I handle the passing of labels/names. Needs a rework
   globalDefinition = makeGlobalDefinitionMaker(grammar_ENV)
   
+  setmetatable(grammar_ENV, { __index = function(self, key) 
+    return definition {
+      function(...)
+        local val = rawget(self, key)
+        
+        if not val then error("Missing grammar key:", key) end
+        if not type(val) == "table" then error("Grammar key:", key, "is of incorrect type", type(val)) end
+        
+        return val(...)
+      end }
+  end })
+  
   local grammarNull = setmetatable({}, {
     __div = alternation,
     __call = function() return false end,
     __tostring = function() return "null" end
   })
   
-  each(function(shorthand, func) grammar_ENV[shorthand] = func end, { null = grammarNull, d = definition, g = globalDefinition, r = repeatedDefinition })
+  each(function(shorthand, func) grammar_ENV[shorthand] = func end, { 
+    null = grammarNull, 
+    d = definition, 
+    g = globalDefinition, 
+    r = repeatedDefinition, 
+    c = repeatedDefinition(0, 1),
+    cm = repeatedDefinition(0),
+    m = repeatedDefinition()
+  })
   
   local grammar = require(grammarFileAddress)(grammar_ENV)
   
   return function(tokenList)
     local reader, result = grammar(TableReader.new(tokenList), listNull)
-    print("Output is:", view(reader), view(result))
     
     return result ~= listNull
        and result:take()

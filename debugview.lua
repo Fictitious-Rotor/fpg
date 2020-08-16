@@ -1,15 +1,15 @@
 return function(givenObject, showNumericKeys)
   local strTbl = {}
   
-  function isTable(arg)
+  local function isTable(arg)
     return type(arg) == "table"
   end
   
-  function ensureTable(arg)
+  local function ensureTable(arg)
     return type(arg) == "table" and arg or { arg }
   end
   
-  function unpackTbl(tbl)
+  local function unpackTbl(tbl)
     local contentFound = false
   
     strTbl[#strTbl + 1] = '{'

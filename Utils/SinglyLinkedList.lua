@@ -28,7 +28,6 @@ function List.take(instance, count)
   if not instance or getmetatable(instance) ~= List then error("Not a List!") end
 
   local function loop(tbl, count)
-    print("Looping:", view(tbl), count)
     local head = tbl:getHead()
   
     if not head or count == 0 then

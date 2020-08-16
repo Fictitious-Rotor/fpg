@@ -45,8 +45,8 @@ end
 
 --------------------------------------------------
 
-local Identifier = Token "Identifier"
 local Whitespace = Token "Whitespace"
+local Name = Token "Name"
 
 local Keyword = Token "Keyword"
 local Symbol = Token "Symbol"
@@ -58,7 +58,7 @@ local Comment = Token "Comment"
 --------------------------------------------------
 
 local matchWhitespace = makeBasicMatcher(makeLuaPatternMatcher("^%s+"), Whitespace)
-local matchIdentifier = makeBasicMatcher(makeLuaPatternMatcher("^[%a_][%w_]*"), Identifier)
+local matchName = makeBasicMatcher(makeLuaPatternMatcher("^[%a_][%w_]*"), Name)
 
 
 
@@ -207,21 +207,19 @@ for _, tokensAndMatcher in ipairs(staticTokens) do
   end
 end
 
-allPatterns[#allPatterns + 1] = pattern(matchIdentifier) -- Identifier must be checked after keywords so that they have precedence
+allPatterns[#allPatterns + 1] = pattern(matchName) -- Identifier must be checked after keywords so that they have precedence
 
 local function makeTypeChecker(typeName)
   return function(tbl)
     local output = tbl 
        and type(tbl) == "table"
        and tbl.type == typeName
-  
-    print("typeChecker matched: ", typeName, "against:", view(tbl))
-  
+       
     return output
   end
 end
 
-local constructNames = { "String", "Comment", "Whitespace", "Number", "Identifier" }
+local constructNames = { "String", "Comment", "Whitespace", "Number", "Name" }
 local constructMatchers = {}
 
 for _, name in ipairs(constructNames) do
