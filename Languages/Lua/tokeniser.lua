@@ -1,7 +1,7 @@
 local Tokeniser = require "Common.tokeniser"
 local pattern = Tokeniser.pattern
 local Token = Tokeniser.makeToken
-local view = require "debugview"
+local view = require "Utils.debugview"
 
 --------------------------------------------------
 

@@ -1,6 +1,6 @@
 local tokeniser = require "Languages.Lua.tokeniser"
 local parser = require "Common.Parser"
-local view = require "debugview"
+local view = require "Utils.debugview"
 
 local function readAll(file)
     local f = assert(io.open(file, "rb"))

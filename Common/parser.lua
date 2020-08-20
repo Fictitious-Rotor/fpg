@@ -9,7 +9,7 @@ setmetatable(_G, {
 
 local TableReader = require "Utils.TableReader"
 local List = require "Utils.SinglyLinkedList"
-local view = require "debugview"
+local view = require "Utils.debugview"
 
 local listNull = List.null
 local cons = List.cons
