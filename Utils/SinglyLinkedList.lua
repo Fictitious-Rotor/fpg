@@ -1,11 +1,13 @@
+local view = require "debugview"
+
 local List = {}
 
 List.__index = List
 
-List.null = setmetatable({ head = false, tail = false, length = 0 }, List)
+List.null = setmetatable({ head = false, tail = false }, List)
 
 function List.cons(head, tail)
-  return setmetatable({ head = head, tail = tail, length = tail.length + 1 }, List)
+  return setmetatable({ head = head, tail = tail }, List)
 end
 
 function List.getHead(tbl)
@@ -14,10 +16,6 @@ end
 
 function List.getTail(tbl)
   return tbl.tail
-end
-
-function List.getLength(tbl)
-  return tbl.length
 end
 
 local function setValue(val, tbl, idx)
@@ -29,7 +27,7 @@ end
 function List.take(instance, count)
   if not instance or getmetatable(instance) ~= List then error("Not a List!") end
 
-  function loop(tbl, count)
+  local function loop(tbl, count)
     local head = tbl:getHead()
   
     if not head or count == 0 then
@@ -39,13 +37,13 @@ function List.take(instance, count)
     end
   end
   
-  return loop(instance, count or instance:getLength()), nil -- suppressing second argument
+  return loop(instance, count or math.huge), nil -- suppressing second argument
 end
 
 function List.takeWhile(instance, predicate)
   if not instance or getmetatable(instance) ~= List then error("Not a List!") end
   
-  function loop(tbl)
+  local function loop(tbl)
     local head = tbl:getHead()
   
     if not head or not predicate(head) then
