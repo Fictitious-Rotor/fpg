@@ -56,10 +56,10 @@ This means that grammar definitions can be complex without impacting the complex
 For example the eLu eBNF statement
 ```lua
 gloves = d { d { "Thumb" / "Missing" }, 
-			 d { "Index" / "Missing" },
-			 d { "Middle" / "Missing" },
-			 d { "Ring" / "Missing" },
-			 d { "Pinky" / "Missing" }};
+             d { "Index" / "Missing" },
+             d { "Middle" / "Missing" },
+             d { "Ring" / "Missing" },
+             d { "Pinky" / "Missing" }};
 ```
 Would, when ran, return a token stream similar to this:
 ```lua
@@ -79,9 +79,9 @@ However, as nesting often simplifies evaluation, it can still be achieved by nam
 This can be done as follows
 ```lua
 gloves = d { d"Opposables"{ "Thumb" / "Missing" }, 
-			 d { "Index" / "Missing" },
-			 d { "Middle" / "Missing" },
-			 d"Expendables"{ d { "Ring" / "Missing" }, d { "Pinky" / "Missing" }}};
+             d { "Index" / "Missing" },
+             d { "Middle" / "Missing" },
+             d"Expendables"{ d { "Ring" / "Missing" }, d { "Pinky" / "Missing" }}};
 ```
 Which would return
 ```lua
@@ -119,7 +119,7 @@ For example
 
 # Set LUA_PATH before running a test file.
 (export LUA_PATH='/home/lua/?.lua;;' \
-	lua53 /home/lua/elu/Test/Languages/Lua/test.lua)
+    lua53 /home/lua/elu/Test/Languages/Lua/test.lua)
 ```
 
 You can implement a language yourself by loading its bootstrap file.
