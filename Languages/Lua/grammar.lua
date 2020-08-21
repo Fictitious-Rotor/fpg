@@ -26,16 +26,13 @@ return function(_ENV)
     
     namelist = d{ Name, cm{ ",", Name }};
     
-    parlist_right_recur = d{ ",", d{ Name, cm{ parlist_right_recur }}
-                                  / "..." };
-    
     parlist = null
             / "..."
-            / d{ Name, c{ parlist_right_recur }};
+            / d{ Name, c{ ",", parlist }};
     
     funcbody = d{ "(", c{ parlist }, ")", block, "end" };
     
-    function_ = d{ "function", funcbody };
+    function_ = d"function"{ "function", funcbody };
     
     expr_terminator = null
                     / "nil"
@@ -48,10 +45,8 @@ return function(_ENV)
                     / String
                     / Number
                     / prefixexpr;
-
-    expr_right_recur = d{ binop, expr_terminator, c{ expr_right_recur }};
     
-    expr = d"expr"{ expr_terminator, c{ expr_right_recur }};
+    expr = d"expr"{ expr_terminator, cm{ binop, expr_terminator }};
     
     field = d{ "[", expr, "]", "=", expr }
           / d{ Name, "=", expr }
@@ -122,8 +117,8 @@ return function(_ENV)
     
     function_declaration = d"function"{ "function", funcname, funcbody };
     
-    local_declaration = d"local"{ "local", d"function"{ "function", Name, funcbody } 
-                                            / d"var"{ namelist, c{ "=", exprlist }}};
+    local_declaration = d"local"{ "local", d"function"{ "function", Name, funcbody }
+                                           / d"var"{ namelist, c{ "=", exprlist }}};
     
     global_assignment = d"global"{ varlist, "=", exprlist };
     
@@ -145,7 +140,9 @@ return function(_ENV)
     chunk = d{ cm{ statement }, c{ retstat }};
     
     block = chunk;
+    
+    grammar = block;
   }
 
-  return block
+  return grammar
 end

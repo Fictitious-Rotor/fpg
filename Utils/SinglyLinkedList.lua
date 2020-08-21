@@ -1,4 +1,4 @@
-local view = require "debugview"
+local view = require "elu.Utils.debugview"
 
 local List = {}
 

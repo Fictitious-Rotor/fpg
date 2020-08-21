@@ -7,9 +7,9 @@ setmetatable(_G, {
   end
 })
 
-local TableReader = require "Utils.TableReader"
-local List = require "Utils.SinglyLinkedList"
-local view = require "Utils.debugview"
+local TableReader = require "elu.Utils.TableReader"
+local List = require "elu.Utils.SinglyLinkedList"
+local view = require "elu.Utils.debugview"
 
 local listNull = List.null
 local cons = List.cons
@@ -34,7 +34,7 @@ local consumerMeta = {
   __tostring = function(self) return self.debugname end
 }
 
-local function makeConsumer(matcher, name)
+local function buildConsumer(matcher, name)
   return setmetatable({ matcher = matcher, debugname = name }, consumerMeta)
 end
 
@@ -50,7 +50,7 @@ end
 
 -----------------<| Alternation
 
-local function makeAlternationMeta()
+local function buildAlternationMeta()
   return {
     __div = alternation,
     __call = function(self, priorReader, priorParsed)
@@ -68,7 +68,7 @@ local function makeAlternationMeta()
   }
 end
 
-local function makeAlternationMaker(literalConsumers)
+local function buildAlternationFactory(literalConsumers)
   return function(self, other)
     if type(other) == "string" then
       other = literalConsumers[other]
@@ -80,7 +80,7 @@ end
 
 -----------------<| Definition
 
-local function makeDefinitionMeta()
+local function buildDefinitionMeta()
   return {
     __div = alternation,
     __call = function(self, priorReader, priorParsed)
@@ -121,7 +121,7 @@ local function convertLiterals(tbl, literalConsumers)
   return setmetatable(tbl, definitionMeta)
 end
 
-local function makeDefinitionMaker(literalConsumers)
+local function buildDefinitionFactory(literalConsumers)
   return function(tblOrString)
     if type(tblOrString) == "string" then
       return function(defTbl)
@@ -143,7 +143,7 @@ local globalDefinitionMeta = {
   end
 }
 
-local function makeGlobalDefinitionMaker(grammar_ENV)
+local function buildGlobalDefinitionFactory(grammar_ENV)
   return function(tbl)
     for name, definition in pairs(tbl) do
       grammar_ENV[name] = definition
@@ -221,15 +221,15 @@ function Parser.loadGrammar(grammarFileAddress, constructMatchers, literalMatche
   local grammar_ENV = {}
   local literalConsumers = {}
   
-  each(function(name, matcher) grammar_ENV[name] = makeConsumer(matcher, name) end, constructMatchers)
-  each(function(name, matcher) literalConsumers[name] = makeConsumer(matcher, name) end, literalMatchers)
+  each(function(name, matcher) grammar_ENV[name] = buildConsumer(matcher, name) end, constructMatchers)
+  each(function(name, matcher) literalConsumers[name] = buildConsumer(matcher, name) end, literalMatchers)
 
-  definition = makeDefinitionMaker(literalConsumers)
-  alternation = makeAlternationMaker(literalConsumers)
-  definitionMeta = makeDefinitionMeta()
-  alternationMeta = makeAlternationMeta()
+  definition = buildDefinitionFactory(literalConsumers)
+  alternation = buildAlternationFactory(literalConsumers)
+  definitionMeta = buildDefinitionMeta()
+  alternationMeta = buildAlternationMeta()
   -- The way I handle string literals and alternation is pretty messy atm. Also the way I handle the passing of labels/names. Needs a rework
-  globalDefinition = makeGlobalDefinitionMaker(grammar_ENV)
+  globalDefinition = buildGlobalDefinitionFactory(grammar_ENV)
   
   setmetatable(grammar_ENV, { __index = lateinit })
   
@@ -241,11 +241,11 @@ function Parser.loadGrammar(grammarFileAddress, constructMatchers, literalMatche
   
   each(function(shorthand, func) grammar_ENV[shorthand] = func end, { 
     null = grammarNull, 
-    d = definition, 
-    g = globalDefinition, 
-    r = repeatedDefinition, 
-    c = repeatedDefinition(0, 1),
-    cm = repeatedDefinition(0),
+    d = definition, -- Change to 'def'
+    g = globalDefinition, -- Change to 'gbl' -- Possibly remove, actually?
+    r = repeatedDefinition, -- Change to 'rep' or 'repeat'
+    c = repeatedDefinition(0, 1), -- Change to 'opt'
+    cm = repeatedDefinition(0), -- Try and find some names to use for this. See what other people do
     m = repeatedDefinition()
   })
   

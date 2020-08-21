@@ -1,7 +1,7 @@
-local Tokeniser = require "Common.tokeniser"
-local pattern = Tokeniser.pattern
+local Tokeniser = require "elu.Common.tokeniser"
+local Pattern = Tokeniser.pattern
 local Token = Tokeniser.makeToken
-local view = require "Utils.debugview"
+local view = require "elu.Utils.debugview"
 
 --------------------------------------------------
 
@@ -170,22 +170,22 @@ local reservedSymbols = {
   "-", "'", "*", "#", "+", "<=", ">=", ".", "<", ">" 
 }
 
-local reservedKeywords = { 
+local reservedKeywords = {
   "do", "if", "in", "or", "end", "for", "nil", "and", "not", 
   "else", "goto", "then", "true", "while", "until", "local", 
   "break", "false", "repeat", "elseif", "return", "function", 
 }
 
 local allPatterns = {
-  pattern(matchString),
-  pattern(matchNumber),
-  pattern(matchComment, true),
-  pattern(matchWhitespace)
+  Pattern(matchString),
+  Pattern(matchNumber),
+  Pattern(matchComment, true),
+  Pattern(matchWhitespace)
 }
 
 local staticTokens = { -- Convert all strings into tokens, then into patterns, then add them to allPatterns
   { reservedSymbols, makeSymbolMatcher },
-  { reservedKeywords, makeKeywordMatcher },
+  { reservedKeywords, makeKeywordMatcher }
 }
 
 local literalMatchers = {}
@@ -196,7 +196,7 @@ for _, tokensAndMatcher in ipairs(staticTokens) do
 
   for _, value in ipairs(tokenSet) do
     local token = matcherMaker(value)
-    local madePattern = pattern(token)
+    local madePattern = Pattern(token)
     
     allPatterns[#allPatterns + 1] = madePattern
     literalMatchers[value] = function(token) 
@@ -207,7 +207,7 @@ for _, tokensAndMatcher in ipairs(staticTokens) do
   end
 end
 
-allPatterns[#allPatterns + 1] = pattern(matchName) -- Identifier must be checked after keywords so that they have precedence
+allPatterns[#allPatterns + 1] = Pattern(matchName) -- Identifier must be checked after keywords so that they have precedence
 
 local function makeTypeChecker(typeName)
   return function(tbl)
@@ -229,7 +229,7 @@ end
 --------------------------------------------------
 
 return {
-  lex = function(str) 
+  lex = function(str)
     return Tokeniser.lex(str, allPatterns)
   end,
   constructMatchers = constructMatchers,

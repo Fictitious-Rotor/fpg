@@ -1,59 +1,129 @@
 # eLu - Extended Lua
 
-This project provides a pure lua AST parser that consumes a string and produces a string.
-It uses combinator parsers to create a representation of eBNF using lua's tables & metamethods.
+## Summary
 
-To add your own syntax to lua, load the stock eBNF representation of lua (found at ebnf.lua) and add some new eBNF definitions to represent the desired syntax.
-You could, for example do the following:
+This project provides a generic framework for writing your own languages in pure lua.
+Grammars are expressed in a manner similar to eBNF to improve readability.
+
+This is achieved using combinator parsers & Lua metamethods.
+
+## Usage
+
+Example language implementations can be found in `Languages/`.
+To create a new language, you will need:
+ - A file for your language's token matchers (i.e. String, Comment, the keyword "while", the symbol "#").
+ - Your language's grammar, written using the eLu eBNF notation
+ - A bootstrap file to orchestrate the loading of your language.
+
+The representation of eBNF that is used by eLu differs from the standard in the following ways:
+| Usage           | Standard notation | eLu notation |
+|-----------------|-------------------|--------------|
+| Definition      | =                 | =            |
+| Concatenation   | ,                 | ,            |
+| Termination     | ;                 | ;            |
+| Alternation     | \|                | /            |
+| Optional        | [ ... ]           | c{ ... }     |
+| Zero or more    | { ... }           | cm{ ... }    |
+| One or more     | ... { ... }       | m{ ... }     |
+| Grouping        | ( ... )           | d{ ... }     |
+| Terminal string | " ... "           | " ... "      |
+| Terminal string | ' ... '           | " ... "      |
+| Comment         | (* ... *)         | --[[ ... ]]  |
+| Exception       | -                 | \<Not used>  |
+
+Due to limitations of Lua, concatenation can only be carried out within a definition.
+For example the eBNF statement
+```lua
+handwear = "Red", "Glove";
 ```
-require "ebnf" 
+Must be written as follows
+```lua
+handwear = d{ "Red, "Glove" };
+```
 
-local kw_fn = userKw("fn", "function")
-local kw_ret = userKw("ret", "return")
+Futhermore, alternations cannot begin on string literals, as that would involve overriding Lua's global string metatable.
+Thusly, the eBNF statement
+```lua
+footwear = "Boots" / "Shoes";
+```
+Must be written as follows
+```lua
+footwear = null / "Boots" / "Shoes";
+```
 
--- Add more keywords to the register
-keywords:add {
-  kw_fn = kw_fn,
-  kw_ret = kw_ret
+Nested definitions in the grammar are automatically inlined when ran against a token stream.
+This means that grammar definitions can be complex without impacting the complexity of the output stream.
+For example the eLu eBNF statement
+```lua
+gloves = d { d { "Thumb" / "Missing" }, 
+			 d { "Index" / "Missing" },
+			 d { "Middle" / "Missing" },
+			 d { "Ring" / "Missing" },
+			 d { "Pinky" / "Missing" }};
+```
+Would, when ran, return a token stream similar to this:
+```lua
+{
+  name = "grammar",
+  tokens = {
+    { "type" = "Finger", "content" = "Thumb" },
+    { "type" = "Finger", "content" = "Missing" },
+    { "type" = "Finger", "content" = "Middle" },
+    { "type" = "Finger", "content" = "Ring" },
+    { "type" = "Finger", "content" = "Missing" }
+  }
 }
-
-my_custom_definiton =(kw_fn + kw_paren_open + args + kw_paren_close + maybemany(stat + kw_semicolon) + maybe(kw_ret + expr + maybe(kw_semicolon)))
-
-functioncall_default = functioncall
-functioncall =(functioncall_default
-             / my_custom_definiton)
-             * "functioncall"
 ```
 
-The representation used by eLu differs from the standard in the following ways:
-| Usage           | Standard notation | eLu notation             |
-|-----------------|-------------------|--------------------------|
-| Definition      | =                 | =                        |
-| Concatenation   | ,                 | +                        |
-| Termination     | ;                 | \<Not used>              |
-| Alternation     | \|                | /                        |
-| Optional        | [ ... ]           | maybe(...)               |
-| Zero or more    | { ... }           | maybemany(...)           |
-| One or more     | ... { ... }       | many(...)                |
-| Grouping        | ( ... )           | ( ... )                  |
-| Terminal string | " ... "           | Found in terminators.lua |
-| Terminal string | ' ... '           | Found in terminators.lua |
-| Comment         | (* ... *)         | --[[ ... ]]              |
-| Exception       | -                 | \<Not used>              |
-
-Be cautious - BIDMAS ordering of operators is still in effect, so you'll need to use parenthesis to ensure that your patterns are interpreted correctly.
-
-I have added labels to each pattern for the purposes of debugging the program. When placed between a pattern and a string, the `*` operator binds the string to the `__tostring` metamethod of the pattern.
-
-Be aware that you can nest as many patterns within one another as necessary. An example of this in `ebnf.lua` would be:
+However, as nesting often simplifies evaluation, it can still be achieved by naming a definition.
+This can be done as follows
+```lua
+gloves = d { d"Opposables"{ "Thumb" / "Missing" }, 
+			 d { "Index" / "Missing" },
+			 d { "Middle" / "Missing" },
+			 d"Expendables"{ d { "Ring" / "Missing" }, d { "Pinky" / "Missing" }}};
 ```
-prefixexp =((varorexp / expr_functioncall)
-          + maybe(lateinit("prefixexp")))
-          * "prefixexp"
+Which would return
+```lua
+{
+  name = "grammar",
+  tokens = {
+    { 
+      name = "Opposables", 
+      tokens = { 
+        { "type" = "Finger", "content" = "Thumb" }
+      }
+    },
+    { "type" = "Finger", "content" = "Missing" },
+    { "type" = "Finger", "content" = "Middle" },
+    { 
+      name = "Expendables",
+      tokens = {
+        { "type" = "Finger", "content" = "Ring" },
+        { "type" = "Finger", "content" = "Missing" }
+      }
+    }
+  }
+}
 ```
 
-Which would map to equivalent eBNF
+
+## Installation
+
+eLu does not have any dependencies (besides Lua version >= 5.2)
+However, your LUA_PATH environment variable should be altered to allow the files to see one another.
+For example
+
+```bash
+#!/usr/bin/env bash
+
+# Set LUA_PATH before running a test file.
+(export LUA_PATH='/home/lua/?.lua;;' \
+	lua53 /home/lua/elu/Test/Languages/Lua/test.lua)
 ```
-prefixexp = varorexp, [prefixexp]
-          | expr_functioncall, [prefixexp]
+
+You can implement a language yourself by loading its bootstrap file.
+For example 
+```lua
+local luaLang = require "elu.Languages.Lua.bootstrap"
 ```

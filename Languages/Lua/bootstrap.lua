@@ -1,21 +1,6 @@
-local tokeniser = require "Languages.Lua.tokeniser"
-local parser = require "Common.Parser"
-local view = require "Utils.debugview"
-
-local function readAll(file)
-    local f = assert(io.open(file, "rb"))
-    local content = f:read("*all")
-    f:close()
-    return content
-end
-
-local aString = readAll("path/to/address/file.lua")
--- print("String to parse:")
--- print(aString, "\n\n")
-
-local lexed = tokeniser.lex(aString)
--- print("Lexed string:")
--- print(view(lexed))
+local tokeniser = require "elu.Languages.Lua.tokeniser"
+local genericParser = require "elu.Common.Parser"
+local luaParser = genericParser.loadGrammar("elu.Languages.Lua.grammar", tokeniser.constructMatchers, tokeniser.literalMatchers)
 
 local function isForGrammar(val)
   local theType = val.type
@@ -23,15 +8,16 @@ local function isForGrammar(val)
      and theType ~= "Comment"
 end
 
-local woWhitespace = {}
+return function(inputString)
+  local lexed = tokeniser.lex(inputString)
+  
+  local woWhitespace = {}
 
-for _, val in ipairs(lexed) do
-  if isForGrammar(val) then
-    woWhitespace[#woWhitespace + 1] = val
+  for _, val in ipairs(lexed) do
+    if isForGrammar(val) then
+      woWhitespace[#woWhitespace + 1] = val
+    end
   end
+  
+  return luaParser(woWhitespace)
 end
-
-local luaParser = parser.loadGrammar("Languages.Lua.grammar", tokeniser.constructMatchers, tokeniser.literalMatchers)
-
-local parsedLua = luaParser(woWhitespace)
-print("Parsed:\n", view(parsedLua))
