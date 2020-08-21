@@ -138,7 +138,7 @@ end
 -----------------<| Global definition
 
 local globalDefinitionMeta = {
-  __call = function(self, reader, parsed)
+  __call = function(self, reader, parsed) -- Do nothing
     return reader, parsed
   end
 }
@@ -198,9 +198,17 @@ end
 
 local Parser = {}
 
-local function loadFile(address, grammar_ENV)
-  local fn, message = loadfile(address, "t", grammar_ENV)
-  return fn and fn() or error(message)
+local function lateinit(self, key)
+  return definition {
+    function(...)
+      local val = rawget(self, key)
+      
+      if not val then error("Missing grammar key:", key) end
+      if not type(val) == "table" then error("Grammar key:", key, "is of incorrect type", type(val)) end
+      
+      return val(...)
+    end 
+  }
 end
 
 local function each(fn, tbl)
@@ -223,20 +231,10 @@ function Parser.loadGrammar(grammarFileAddress, constructMatchers, literalMatche
   -- The way I handle string literals and alternation is pretty messy atm. Also the way I handle the passing of labels/names. Needs a rework
   globalDefinition = makeGlobalDefinitionMaker(grammar_ENV)
   
-  setmetatable(grammar_ENV, { __index = function(self, key) 
-    return definition {
-      function(...)
-        local val = rawget(self, key)
-        
-        if not val then error("Missing grammar key:", key) end
-        if not type(val) == "table" then error("Grammar key:", key, "is of incorrect type", type(val)) end
-        
-        return val(...)
-      end }
-  end })
+  setmetatable(grammar_ENV, { __index = lateinit })
   
   local grammarNull = setmetatable({}, {
-    __div = alternation,
+    __div = alternation, -- I have to set this here as alternation is nil beforehand
     __call = function() return false end,
     __tostring = function() return "null" end
   })
@@ -251,7 +249,7 @@ function Parser.loadGrammar(grammarFileAddress, constructMatchers, literalMatche
     m = repeatedDefinition()
   })
   
-  local grammar = require(grammarFileAddress)(grammar_ENV)
+  local grammar = require(grammarFileAddress)(grammar_ENV) -- Get the package.path logic out of require and use it to make a specialised version of loadFile
   
   return function(tokenList)
     local reader, result = grammar(TableReader.new(tokenList), listNull)
