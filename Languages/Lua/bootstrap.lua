@@ -1,8 +1,8 @@
 require("fpg.Utils.RestrictGlobals").enable()
 
-local tokeniser = require "elu.Languages.Lua.tokeniser"
-local genericParser = require "elu.Common.Parser"
-local luaParser = genericParser.loadGrammar("elu.Languages.Lua.grammar", tokeniser.constructMatchers, tokeniser.literalMatchers)
+local tokeniser = require "fpg.Languages.Lua.tokeniser"
+local genericParser = require "fpg.Common.Parser"
+local luaParser = genericParser.loadGrammar("fpg.Languages.Lua.grammar", tokeniser.constructMatchers, tokeniser.literalMatchers)
 
 local function isForGrammar(val)
   local theType = val.type

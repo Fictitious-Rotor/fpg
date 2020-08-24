@@ -61,7 +61,7 @@ for _, val in ipairs(lexed) do
   end
 end
 
-local ebnfParser = parser.loadGrammar("Languages.eBNF.grammar", tokeniser.constructMatchers, tokeniser.literalMatchers)
+local ebnfParser = parser.loadGrammar("fpg.Languages.eBNF.grammar", tokeniser.constructMatchers, tokeniser.literalMatchers)
 
 local parsedEbnf = ebnfParser(filteredTokens)
 print("Parsed:\n", view(parsedEbnf))
