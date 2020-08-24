@@ -28,11 +28,22 @@ return function(_ENV)
     
     parlist = null
             / "..."
+            / d"default"{ "[", Name, expr, "]", c{ ",", parlist } }
             / d{ Name, c{ ",", parlist }};
     
     funcbody = d{ "(", c{ parlist }, ")", block, "end" };
     
-    function_ = d"function"{ "function", funcbody };
+    function_ = d{ "function", funcbody };
+    
+    lambda_function = d"lambda"{ "fn", "(", c{ parlist }, ")", cm{ block }, c{ expr }, "end" };
+    
+    choose_expr = d"choose"{ expr, "choose", exprlist, "else", exprlist };
+    
+    contract_predicate = d"contract_pred"{ Name, ":", (Name / function_ / lambda_function) }
+    
+    contract_expr = d"contract"{ "contract", Name, "(", cm{ contract_predicate 
+                                                          / Name
+                                                          / d"optional"{ "[", contract_predicate / Name, "]" }}, ")" }
     
     expr_terminator = null
                     / "nil"
@@ -41,12 +52,13 @@ return function(_ENV)
                     / "..."
                     / tableconstructor
                     / function_
+                    / lambda_function
                     / d{ unop, expr }
                     / String
                     / Number
                     / prefixexpr;
     
-    expr = d"expr"{ expr_terminator, cm{ binop, expr_terminator }};
+    expr = d{ expr_terminator, cm{ binop, expr_terminator }};
     
     field = d{ "[", expr, "]", "=", expr }
           / d{ Name, "=", expr }
@@ -54,13 +66,13 @@ return function(_ENV)
     
     fieldlist = d{ field, cm{ fieldsep, field }, c{ fieldsep }};
     
-    tableconstructor = d"table"{ "{", c{ fieldlist }, "}" };
+    tableconstructor = d{ "{", c{ fieldlist }, "}" };
     
     exprlist = d{ expr, cm { ",", expr }};
     
-    args = d"args"{ d{ "(", c{ exprlist }, ")" }
-                  / tableconstructor
-                  / String };
+    args = d{ d{ "(", c{ exprlist }, ")" }
+               / tableconstructor
+               / String };
     
     var_suffix = d{ "[", expr, "]" }
                / d{ ".", Name };
@@ -70,12 +82,12 @@ return function(_ENV)
     var_right_recur = d{ var_suffix, c{ var_right_recur }}
                     / d{ functioncall_suffix, val_right_recur };
     
-    var = d"var"{ Name, cm{ var_right_recur }};
+    var = d{ Name, cm{ var_right_recur }};
     
     functioncall_right_recur = d{ var_suffix, functioncall_right_recur }
                              / d{ functioncall_suffix, c{ functioncall_right_recur }};
     
-    functioncall = d"functioncall"{ Name, functioncall_right_recur };
+    functioncall = d{ Name, functioncall_right_recur };
     
     prefixexpr_right_recur = d{ var_suffix, c{ prefixexpr_right_recur }}
                            / d{ functioncall_suffix, c{ prefixexpr_right_recur }};
@@ -90,37 +102,36 @@ return function(_ENV)
     
     retstat = d{ "return", c{ exprlist }, c{ ";" }};
     
-    label = d"label"{ "::", Name, "::" };
+    label = d{ "::", Name, "::" };
     
-    do_statement = d"do_stmt"{ "do", block, "end" };
+    do_statement = d{ "do", block, "end" };
     
-    goto_statement = d"goto_stmt"{ "goto", Name };
+    goto_statement = d{ "goto", Name };
     
-    while_statement = d"while_stmt"{ "while", expr, "do", block, "end" };
+    while_statement = d{ "while", expr, "do", block, "end" };
     
-    repeat_statement = d"repeat_stmt"{ "repeat", block, "until", expr };
+    repeat_statement = d{ "repeat", block, "until", expr };
     
-    if_statement = d"if_stmt"{ 
-                      "if", expr, "then", 
+    if_statement = d{ "if", expr, "then", 
                         block,
-                      cm"elseif"{ "elseif", expr, "then", 
+                      cm{ "elseif", expr, "then", 
                         block },
-                      c"else"{ "else",
+                      c{ "else",
                         block },
                       "end" };
     
-    for_declaration = d"foridx"{ Name, "=", expr, ",", expr, c{ ",", expr }};
+    for_declaration = d{ Name, "=", expr, ",", expr, c{ ",", expr }};
     
-    foreach_declaration = d"foreach"{ namelist, "in", exprlist };
+    foreach_declaration = d{ namelist, "in", exprlist };
     
-    for_loop = d"for_loop"{ "for", for_declaration / foreach_declaration, "do", block, "end" };
+    for_loop = d{ "for", for_declaration / foreach_declaration, "do", block, "end" };
     
-    function_declaration = d"function"{ "function", funcname, funcbody };
+    function_declaration = d{ "function", funcname, funcbody };
     
-    local_declaration = d"local"{ "local", d"function"{ "function", Name, funcbody }
-                                           / d"var"{ namelist, c{ "=", exprlist }}};
+    local_declaration = d{ "local", d{ "function", Name, funcbody }
+                                    / d{ namelist, c{ "=", exprlist }}};
     
-    assignment = d"assignment"{ varlist, "=", exprlist };
+    assignment = d{ varlist, "=", exprlist };
     
     statement = null
               / ";"
@@ -134,8 +145,7 @@ return function(_ENV)
               / function_declaration
               / local_declaration
               / label
-              / functioncall
-              / assignment;
+              / d"expr_stmt"{ functioncall / assignment };
     
     chunk = d{ cm{ statement }, c{ retstat }};
     

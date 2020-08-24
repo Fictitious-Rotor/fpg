@@ -1,4 +1,4 @@
-# eLu - Extended Lua
+# Formal Polyglot - Write custom languages in pure Lua
 
 ## Summary
 
@@ -16,7 +16,7 @@ To create a new language, you will need:
  - A bootstrap file to orchestrate the loading of your language.
 
 The representation of eBNF that is used by eLu differs from the standard in the following ways:
-| Usage           | Standard notation | eLu notation |
+| Usage           | Standard notation | fpg notation |
 |-----------------|-------------------|--------------|
 | Definition      | =                 | =            |
 | Concatenation   | ,                 | ,            |
@@ -110,7 +110,7 @@ Which would return
 
 ## Installation
 
-eLu does not have any dependencies (besides Lua version >= 5.2)
+fpg does not have any dependencies (besides Lua version >= 5.2)
 However, your LUA_PATH environment variable should be altered to allow the files to see one another.
 For example
 
@@ -119,11 +119,11 @@ For example
 
 # Set LUA_PATH before running a test file.
 (export LUA_PATH='/home/lua/?.lua;;' \
-    lua53 /home/lua/elu/Test/Languages/Lua/test.lua)
+    lua53 /home/lua/fpg/Test/Languages/Lua/test.lua)
 ```
 
 You can implement a language yourself by loading its bootstrap file.
 For example 
 ```lua
-local luaLang = require "elu.Languages.Lua.bootstrap"
+local luaLang = require "fpg.Languages.Lua.bootstrap"
 ```

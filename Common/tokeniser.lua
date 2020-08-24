@@ -1,6 +1,6 @@
 local Tokeniser = {}
 
-function Struct(propertyNames)
+local function Struct(propertyNames)
   return function(...)
     local theStruct = {}
     local args = { ... }

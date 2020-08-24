@@ -1,15 +1,6 @@
-setmetatable(_G, {
-  __index = function(tbl, key)
-    error(string.format("Missing global variable with key: '%s'", key))
-  end,
-  __newindex = function(tbl, key, val)
-    rawset(tbl, key, val == true or error "Cannot reference a global without prior declaration")
-  end
-})
-
-local TableReader = require "elu.Utils.TableReader"
-local List = require "elu.Utils.SinglyLinkedList"
-local view = require "elu.Utils.debugview"
+local TableReader = require "fpg.Utils.TableReader"
+local List = require "fpg.Utils.SinglyLinkedList"
+local view = require "fpg.Utils.debugview"
 
 local listNull = List.null
 local cons = List.cons

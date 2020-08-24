@@ -1,6 +1,6 @@
-local tokeniser = require "elu.Languages.eBNF.tokeniser"
-local parser = require "elu.Common.Parser"
-local view = require "elu.Utils.debugview"
+local tokeniser = require "fpg.Languages.eBNF.tokeniser"
+local parser = require "fpg.Common.Parser"
+local view = require "fpg.Utils.debugview"
 
 local function readAll(file)
     local f = assert(io.open(file, "rb"))

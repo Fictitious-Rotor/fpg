@@ -1,5 +1,5 @@
-local luaLang = require "elu.Languages.Lua.bootstrap"
-local view = require "elu.Utils.debugview"
+local luaLang = require "fpg.Languages.Lua.bootstrap"
+local view = require "fpg.Utils.debugview"
 
 local function readAll(file)
     local f = assert(io.open(file, "rb"))

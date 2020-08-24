@@ -58,7 +58,7 @@ local Comment = Token "Comment"
 --------------------------------------------------
 
 local matchWhitespace = makeBasicMatcher(makeLuaPatternMatcher("^%s+"), Whitespace)
-local matchName = makeBasicMatcher(makeLuaPatternMatcher("^[%a_][%w_]*"), Name)
+local matchName = makeBasicMatcher(makeLuaPatternMatcher("^[%a_][%w_?!]*"), Name)
 
 
 
@@ -171,9 +171,9 @@ local reservedSymbols = {
 }
 
 local reservedKeywords = {
-  "do", "if", "in", "or", "end", "for", "nil", "and", "not", 
-  "else", "goto", "then", "true", "while", "until", "local", 
-  "break", "false", "repeat", "elseif", "return", "function", 
+  "do", "if", "in", "or", "end", "for", "nil", "and", "not", "else", 
+  "goto", "then", "true", "while", "until", "local", "break", "false", 
+  "repeat", "elseif", "return", "function", "contract", "choose"
 }
 
 local allPatterns = {
