@@ -1,4 +1,4 @@
-# Formal Polyglot - Write custom languages in pure Lua
+# Formal Polyglot (fpg) - Write custom languages in pure Lua
 
 ## Summary
 
@@ -12,7 +12,7 @@ This is achieved using combinator parsers & Lua metamethods.
 Example language implementations can be found in `Languages/`.
 To create a new language, you will need:
  - A file for your language's token matchers (i.e. String, Comment, the keyword "while", the symbol "#").
- - Your language's grammar, written using the eLu eBNF notation
+ - Your language's grammar, written using the fpg eBNF notation
  - A bootstrap file to orchestrate the loading of your language.
 
 The representation of eBNF that is used by eLu differs from the standard in the following ways:
@@ -118,8 +118,9 @@ For example
 #!/usr/bin/env bash
 
 # Set LUA_PATH before running a test file.
+cd /home/lua/fpg/Test/Languages/Lua
 (export LUA_PATH='/home/lua/?.lua;;' \
-    lua53 /home/lua/fpg/Test/Languages/Lua/test.lua)
+    lua53 test.lua)
 ```
 
 You can implement a language yourself by loading its bootstrap file.
