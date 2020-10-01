@@ -1,6 +1,6 @@
 require("fpg.Utils.RestrictGlobals").enable()
 
-local tokeniser = require "fpg.Languages.Lua.tokeniser"
+local tokeniser = require "fpg.Languages.Lua.tokens"
 local genericParser = require "fpg.Common.Parser"
 local luaParser = genericParser.loadGrammar("fpg.Languages.Lua.grammar", tokeniser.constructMatchers, tokeniser.literalMatchers)
 

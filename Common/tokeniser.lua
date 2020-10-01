@@ -1,21 +1,10 @@
+local Struct = require "fpg.Utils.Struct"
+
 local Tokeniser = {}
 
-local function Struct(propertyNames)
-  return function(...)
-    local theStruct = {}
-    local args = { ... }
-    
-    for idx, propertyName in ipairs(propertyNames) do
-      theStruct[propertyName] = args[idx]
-    end
-    
-    return theStruct
-  end
-end
+Tokeniser.pattern = Struct"Pattern"{ "match", "isPriority" }
 
-Tokeniser.pattern = Struct { "match", "isPriority" }
-
-local token = Struct { "type", "content" }
+local token = Struct"Token"{ "type", "content" }
 
 function Tokeniser.makeToken(type)
   return function(content)

@@ -173,7 +173,7 @@ local reservedSymbols = {
 local reservedKeywords = {
   "do", "if", "in", "or", "end", "for", "nil", "and", "not", "else", 
   "goto", "then", "true", "while", "until", "local", "break", "false", 
-  "repeat", "elseif", "return", "function", "contract", "choose"
+  "repeat", "elseif", "return", "function", "contract", "choose", "fn"
 }
 
 local allPatterns = {

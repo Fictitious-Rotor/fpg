@@ -59,7 +59,13 @@ end
 
 function List.__tostring(instance)
   if instance == List.null then return "null" end
-  return table.concat(instance:take())
+  local contents = instance:take(15)
+  
+  for idx, value in ipairs(contents) do
+    contents[idx] = type(value) == "string" and string.format("'%s'", value) or tostring(value)
+  end
+  
+  return string.format("List = { %s }", table.concat(contents, ", "))
 end
 
 return List

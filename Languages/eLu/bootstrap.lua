@@ -1,8 +1,13 @@
 require("fpg.Utils.RestrictGlobals").enable()
 
-local tokeniser = require "fpg.Languages.Lua.tokeniser"
-local genericParser = require "fpg.Common.Parser"
-local luaParser = genericParser.loadGrammar("fpg.Languages.Lua.grammar", tokeniser.constructMatchers, tokeniser.literalMatchers)
+local tokeniser = require "fpg.Languages.eLu.tokens"
+local lexer = tokeniser.lex
+local eLuParser = require("fpg.Common.Parser").loadGrammar(
+  "fpg.Languages.eLu.grammar", 
+  tokeniser.constructMatchers, 
+  tokeniser.literalMatchers
+)
+local evaluate = require("fpg.Languages.eLu.evaluator").evaluate
 
 local function isForGrammar(val)
   local theType = val.type
@@ -11,7 +16,7 @@ local function isForGrammar(val)
 end
 
 return function(inputString)
-  local lexed = tokeniser.lex(inputString)
+  local lexed = lexer(inputString)
   
   local woWhitespace = {}
 
@@ -21,5 +26,7 @@ return function(inputString)
     end
   end
   
-  return luaParser(woWhitespace)
+  local parsed = eLuParser(woWhitespace)
+  
+  return evaluate(parsed)
 end

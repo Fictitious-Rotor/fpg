@@ -127,4 +127,6 @@ You can implement a language yourself by loading its bootstrap file.
 For example 
 ```lua
 local luaLang = require "fpg.Languages.Lua.bootstrap"
+
+local output = luaLang("print('Your code goes here')")
 ```

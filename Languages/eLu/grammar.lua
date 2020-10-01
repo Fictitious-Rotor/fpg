@@ -35,15 +35,15 @@ return function(_ENV)
     
     function_ = d{ "function", funcbody };
     
-    lambda_function = d"lambda"{ "fn", "(", c{ parlist }, ")", cm{ block }, c{ expr }, "end" };
+    lambda_function = d"lambda"{ "fn", "(", c{ parlist }, ")", cm{ block }, c"tail"{ expr }, "end" };
     
     choose_expr = d"choose"{ expr, "choose", exprlist, "else", exprlist };
     
-    contract_predicate = d"contract_pred"{ Name, ":", (Name / function_ / lambda_function) }
+    contract_predicate = d"contract_pred"{ Name, ":", (Name / function_ / lambda_function) };
     
     contract_expr = d"contract"{ "contract", Name, "(", cm{ contract_predicate 
                                                           / Name
-                                                          / d"optional"{ "[", contract_predicate / Name, "]" }}, ")" }
+                                                          / d"optional"{ "[", contract_predicate / Name, "]" }}, ")" };
     
     expr_terminator = null
                     / "nil"
@@ -100,8 +100,6 @@ return function(_ENV)
     
     funcname = d{ Name, cm{ ".", Name }, c{ ":", Name }};
     
-    retstat = d{ "return", c{ exprlist }, c{ ";" }};
-    
     label = d{ "::", Name, "::" };
     
     do_statement = d{ "do", block, "end" };
@@ -132,6 +130,8 @@ return function(_ENV)
                                     / d{ namelist, c{ "=", exprlist }}};
     
     assignment = d{ varlist, "=", exprlist };
+    
+    retstat = d{ "return", c{ exprlist }, c{ ";" }};
     
     statement = null
               / ";"

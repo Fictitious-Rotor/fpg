@@ -25,3 +25,5 @@ eLu language spec:
 			   else default1, default2
 	match syntax? (not yet)
 	make it so that assignments return the value that was assigned
+	add wrapper function for d{ Name, ":", Name }
+	some sort of lua equivalent to log-once

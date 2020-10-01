@@ -26,6 +26,10 @@ function TableReader:getValue(givenIdx)
   return self.tbl[givenIdx or self.idx]
 end
 
+function TableReader:isFinished()
+  return self.tbl[self.idx] == nil -- Want to make sure this a boolean
+end
+
 function TableReader:__tostring()
   return "position: " .. self.idx
 end

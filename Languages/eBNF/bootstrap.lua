@@ -1,4 +1,4 @@
-local tokeniser = require "fpg.Languages.eBNF.tokeniser"
+local tokeniser = require "fpg.Languages.eBNF.tokens"
 local parser = require "fpg.Common.Parser"
 local view = require "fpg.Utils.debugview"
 

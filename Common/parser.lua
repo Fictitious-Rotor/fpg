@@ -5,6 +5,7 @@ local view = require "fpg.Utils.debugview"
 local listNull = List.null
 local cons = List.cons
 
+local consumerMeta
 local definition
 local definitionMeta
 local globalDefinition
@@ -12,18 +13,42 @@ local repeatedDefinition
 local alternation
 local alternationMeta
 
-local consumerMeta = {
-  __call = function(self, reader, parsed)
-    local token = reader:getValue()
+local oldPrint = print
+local indentation = 0
 
-    if self.matcher(token) then
-      return reader:withFollowingIndex(), cons(token, parsed)
+local function print(...)
+  oldPrint(string.rep("\t", indentation), ...)
+end
+
+local function buildConsumerMeta(tokenGranularity)
+  local function getToken(reader)
+    local token = reader:getValue()
+    
+    if not token then return false end
+  
+    if (token.granularity or 0) >= tokenGranularity then
+      return token, reader:withFollowingIndex()
     else
-      return false
+      return getToken(reader:withFollowingIndex())
     end
-  end,
-  __tostring = function(self) return self.debugname end
-}
+  end
+
+  return {
+    __call = function(self, reader, parsed)
+      local token, reader = getToken(reader)
+      local debugMessage = string.format("I have token %s. Attempting matcher: %s. ", token, self)
+
+      if self.matcher(token) then
+        print(debugMessage, "It matched")
+        return reader, cons(token, parsed)
+      else
+        print(debugMessage, "It did not match")
+        return false
+      end
+    end,
+    __tostring = function(self) return string.format("'%s'", self.debugname) end
+  }
+end
 
 local function buildConsumer(matcher, name)
   return setmetatable({ matcher = matcher, debugname = name }, consumerMeta)
@@ -44,15 +69,20 @@ end
 local function buildAlternationMeta()
   return {
     __div = alternation,
+    
     __call = function(self, priorReader, priorParsed)
+      print(string.format("Trying: %s.", self))
       local reader, parsed = self.left(priorReader, priorParsed)
       
       if parsed then
+        print(self, "succeeded")
         return reader, parsed
       else
+        print(self, "failed")
         return self.right(priorReader, priorParsed)
       end
     end,
+    
     __tostring = function(self)
       return string.format("(%s / %s)", self.left, self.right)
     end
@@ -74,19 +104,29 @@ end
 local function buildDefinitionMeta()
   return {
     __div = alternation,
+    
     __call = function(self, priorReader, priorParsed)
       local name = self.name
       local startingParsed = name and listNull or priorParsed
       
+      if #self == 0 then 
+        error(string.format("Empty definition with name of %s encountered at: %s with parsed of %s", name, priorReader, priorParsed)) 
+      end
+      
+      indentation = indentation + 1
+      
       local reader, parsed = concatenate(priorReader, startingParsed, ipairs(self))
       if not reader then return false end
       
+      indentation = indentation -1
+      
       if name then
-        return reader, cons({ tokens = parsed:take(), name = name }, priorParsed)
+        return reader, cons(definition{ tokens = parsed:take(), name = name }, priorParsed)
       else
         return reader, parsed
       end
     end,
+    
     __tostring = function(self)
       local vals = {}
       for _,v in ipairs(self) do vals[#vals + 1] = tostring(v) end
@@ -105,7 +145,7 @@ end
 local function convertLiterals(tbl, literalConsumers)
   for idx, value in ipairs(tbl) do
     if type(value) == "string" then
-       tbl[idx] = literalConsumers[value]
+       tbl[idx] = literalConsumers[value] or error(string.format("Missing literal: '%s' for table:\n%s", value, view(tbl)))
     end
   end
   
@@ -151,9 +191,11 @@ local function repeatDefinition(minimumCount, maximumCount, defTbl, name)
 
   local function loop(priorReader, priorParsed, count)
     local reader, parsed = def(priorReader, priorParsed)
+    print("Loop returned", reader, parsed)
 
     if reader then
       if count <= maximumCount then
+        print("Going in for another loop!", reader, parsed, count)
         return loop(reader, parsed, count + 1)
       end
     else
@@ -164,10 +206,21 @@ local function repeatDefinition(minimumCount, maximumCount, defTbl, name)
 
     return false
   end
-
-  return function(priorReader, priorParsed)
-    return loop(priorReader, priorParsed, 1)
-  end
+  
+  return definition {
+    setmetatable({}, {
+      __call = function(self, priorReader, priorParsed)
+        return loop(priorReader, priorParsed, 1)
+      end,
+      __tostring = function()
+        if maximumCount == math.huge then 
+          return string.format("%s{%s}", def, maximumCount)
+        else
+          return string.format("%s{%s,%s}", def, minimumCount, maximumCount)
+        end
+      end
+    })
+  }
 end
 
 repeatedDefinition = function(minimumCount, maximumCount)
@@ -190,15 +243,28 @@ end
 local Parser = {}
 
 local function lateinit(self, key)
+  local resolvedVal
+  
+  local function getVal()
+    if resolvedVal then return resolvedVal end
+  
+    resolvedVal = rawget(self, key)
+    
+    if not resolvedVal then error("Missing grammar key:", key) end
+    if not type(resolvedVal) == "table" then error("Grammar key:", key, "is of incorrect type:", type(resolvedVal)) end
+    
+    return resolvedVal
+  end
+
   return definition {
-    function(...)
-      local val = rawget(self, key)
-      
-      if not val then error("Missing grammar key:", key) end
-      if not type(val) == "table" then error("Grammar key:", key, "is of incorrect type", type(val)) end
-      
-      return val(...)
-    end 
+    setmetatable({}, {
+      __call = function(self, ...)
+        return getVal()(...)
+      end,
+      __tostring = function()
+        return tostring(key)
+      end
+    })
   }
 end
 
@@ -208,13 +274,21 @@ local function each(fn, tbl)
   end
 end
 
-function Parser.loadGrammar(grammarFileAddress, constructMatchers, literalMatchers)
+-- This function should not be codependent with itself
+-- At the moment you have globals that you set from an instance!
+-- Try and move this into the object oriented model as it seems to be what you're going for here
+function Parser.loadGrammar(grammarFileAddress, constructMatchers, literalMatchers, tokenGranularity)
   local grammar_ENV = {}
   local literalConsumers = {}
+  local tokenGranularity = tokenGranularity or 0
+  
+  -- Add a parameter to this function that lets you specify the parsing granularity.
+  -- If the granularity score of a token is too low, it should be skipped
+  consumerMeta = buildConsumerMeta(tokenGranularity)
   
   each(function(name, matcher) grammar_ENV[name] = buildConsumer(matcher, name) end, constructMatchers)
   each(function(name, matcher) literalConsumers[name] = buildConsumer(matcher, name) end, literalMatchers)
-
+  
   definition = buildDefinitionFactory(literalConsumers)
   alternation = buildAlternationFactory(literalConsumers)
   definitionMeta = buildDefinitionMeta()
@@ -224,16 +298,18 @@ function Parser.loadGrammar(grammarFileAddress, constructMatchers, literalMatche
   
   setmetatable(grammar_ENV, { __index = lateinit })
   
-  local grammarNull = setmetatable({}, {
+  local grammarNull = setmetatable({}, { -- Don't move this code somewhere before alternation is given its final value!
     __div = alternation, -- I have to set this here as alternation is nil beforehand
+    
     __call = function() return false end,
-    __tostring = function() return "null" end
+    
+    __tostring = function() return "List = null" end
   })
   
   each(function(shorthand, func) grammar_ENV[shorthand] = func end, { 
     null = grammarNull, 
     d = definition, -- Change to 'def'
-    g = globalDefinition, -- Change to 'gbl' -- Possibly remove, actually?
+    g = globalDefinition, -- Change to 'gbl' -- Possibly remove, actually as you should simply be able to just index right into the environment 
     r = repeatedDefinition, -- Change to 'rep' or 'repeat'
     c = repeatedDefinition(0, 1), -- Change to 'opt'
     cm = repeatedDefinition(0), -- Try and find some names to use for this. See what other people do
@@ -244,6 +320,15 @@ function Parser.loadGrammar(grammarFileAddress, constructMatchers, literalMatche
   
   return function(tokenList)
     local reader, result = grammar(TableReader.new(tokenList), listNull)
+    
+    if not reader:isFinished() then 
+      error(string.format( -- Sorry about the indentation
+[[Unable to read entire input!
+Reader %s. Current %s.
+
+Parser returned
+%s]], reader, reader:getValue(), result))
+    end
     
     return result ~= listNull
        and result:take()
